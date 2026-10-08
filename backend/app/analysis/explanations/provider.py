@@ -201,18 +201,27 @@ class TemplateExplanationProvider(ExplanationProvider):
     ) -> list[StructuredInsight]:
         insights = []
         if problem_type == "regression":
-            r2 = metrics_summary.get("r2", 0.0)
-            rmse = metrics_summary.get("rmse", 0.0)
-            mae = metrics_summary.get("mae", 0.0)
+            r2 = float(metrics_summary.get("r2", 0.0))
+            rmse = float(metrics_summary.get("rmse", 0.0))
+            mae = float(metrics_summary.get("mae", 0.0))
+            if r2 <= 0.0:
+                summary_text = f"Baseline mean predictor was not exceeded (best test R² = {r2:.3f}, RMSE = {rmse:.2f})."
+                plain_text = (
+                    f"Out of all benchmarked regression algorithms, '{best_model}' yielded test R² = {r2:.3f} and RMSE = {rmse:.2f}. "
+                    "Because test R² is non-positive, linear and tree models did not outperform a simple baseline mean prediction on held-out test data."
+                )
+            else:
+                summary_text = f"Achieved top predictive fit (R² = {r2:.3f}, RMSE = {rmse:.2f})."
+                plain_text = (
+                    f"Out of all benchmarked regression algorithms, '{best_model}' demonstrated optimal predictive capability "
+                    f"on un-seen test observations, explaining {r2 * 100:.1f}% of target variance with an average absolute error (MAE) of {mae:.2f}."
+                )
             insights.append(
                 StructuredInsight(
                     category="modeling",
                     title=f"Benchmark Champion: {best_model}",
-                    summary=f"Achieved top predictive fit (R² = {r2:.3f}, RMSE = {rmse:.2f}).",
-                    plain_english=(
-                        f"Out of all benchmarked regression algorithms, '{best_model}' demonstrated optimal predictive capability "
-                        f"on un-seen test observations, explaining {r2 * 100:.1f}% of target variance with an average absolute error (MAE) of {mae:.2f}."
-                    ),
+                    summary=summary_text,
+                    plain_english=plain_text,
                     confidence="high",
                     evidence={
                         "model": best_model,

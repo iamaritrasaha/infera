@@ -148,13 +148,13 @@ def compute_correlations(
 
     # Sort pairs by absolute Pearson correlation descending
     pairs.sort(key=lambda x: abs(x.pearson_r), reverse=True)
-    top_pos = [p for p in pairs if p.direction == "positive"][:max_pairs]
+    top_corrs = pairs[:max_pairs]
     top_neg = [p for p in pairs if p.direction == "negative"][:max_pairs]
 
     return CorrelationMatrix(
         columns=valid_cols,
         pearson_matrix=p_mat,
         spearman_matrix=s_mat,
-        top_correlations=top_pos,
+        top_correlations=top_corrs,
         notable_negative_correlations=top_neg,
     )

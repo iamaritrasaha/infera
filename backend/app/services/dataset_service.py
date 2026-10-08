@@ -57,6 +57,9 @@ session_store = DatasetSessionStore(
 
 def parse_dataset_bytes(content: bytes, filename: str) -> pd.DataFrame:
     """Safely parses raw file bytes into a Pandas DataFrame."""
+    if len(content.strip()) == 0:
+        raise ValueError("Uploaded file is empty (contains zero bytes).")
+
     if len(content) > settings.MAX_UPLOAD_SIZE_BYTES:
         max_mb = settings.MAX_UPLOAD_SIZE_BYTES / (1024 * 1024)
         raise ValueError(f"Uploaded file exceeds maximum allowed size ({max_mb:.1f} MB).")
@@ -89,10 +92,19 @@ def parse_dataset_bytes(content: bytes, filename: str) -> pd.DataFrame:
     if len(df) == 0:
         raise ValueError("Uploaded file is empty (contains zero rows).")
 
+    if len(df.columns) == 0:
+        raise ValueError("Uploaded file contains zero columns.")
+
     if len(df) > settings.MAX_ROW_COUNT:
         raise ValueError(
             f"Dataset contains {len(df):,} rows, exceeding free-tier limit of {settings.MAX_ROW_COUNT:,} rows. "
             "Please upload a representative sample."
+        )
+
+    if len(df.columns) > settings.MAX_COLUMN_COUNT:
+        raise ValueError(
+            f"Dataset contains {len(df.columns)} columns, exceeding free-tier limit of {settings.MAX_COLUMN_COUNT} columns. "
+            "Please upload a dataset with fewer columns."
         )
 
     # Sanitize column names: convert all to string, strip whitespace

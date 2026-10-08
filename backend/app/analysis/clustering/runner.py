@@ -76,7 +76,8 @@ def run_clustering_suite(
         km = KMeans(n_clusters=k, random_state=42, n_init=10)
         labels = km.fit_predict(x_scaled)
         try:
-            sil = float(silhouette_score(x_scaled, labels))
+            sil_samp = min(1000, n_samples) if n_samples > 1000 else None
+            sil = float(silhouette_score(x_scaled, labels, sample_size=sil_samp, random_state=42))
             if sil > best_sil:
                 best_sil = sil
                 best_k = k
@@ -145,7 +146,16 @@ def run_clustering_suite(
             if len(unique_db) > 1 and (n_samples - noise_count) > len(unique_db):
                 try:
                     non_noise = db_labels != -1
-                    db_sil = float(silhouette_score(x_scaled[non_noise], db_labels[non_noise]))
+                    n_non_noise = int(np.sum(non_noise))
+                    sil_samp = min(1000, n_non_noise) if n_non_noise > 1000 else None
+                    db_sil = float(
+                        silhouette_score(
+                            x_scaled[non_noise],
+                            db_labels[non_noise],
+                            sample_size=sil_samp,
+                            random_state=42,
+                        )
+                    )
                 except Exception:
                     db_sil = None
 

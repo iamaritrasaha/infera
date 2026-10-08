@@ -1,5 +1,6 @@
 """Comprehensive report generator producing professional Markdown and standalone HTML reports."""
 
+import html
 from datetime import datetime
 
 
@@ -160,8 +161,8 @@ The empirical correlation engine computed Pearson linear coefficients and two-si
 
 def generate_html_report(result_payload: dict) -> str:
     """Generates a standalone, beautifully styled HTML report ready for printing or viewing."""
-    dataset_name = result_payload.get("dataset_name", "Uploaded Dataset")
-    health = result_payload.get("health_score", 100)
+    dataset_name = html.escape(str(result_payload.get("dataset_name", "Uploaded Dataset")))
+    health = int(result_payload.get("health_score", 100))
     schema = result_payload.get("schema", {})
     problem = result_payload.get("problem_detection", {})
     models = result_payload.get("modeling", {})
@@ -171,11 +172,14 @@ def generate_html_report(result_payload: dict) -> str:
 
     insights_html = ""
     for ins in insights:
+        title = html.escape(str(ins.get("title", "")))
+        plain_english = html.escape(str(ins.get("plain_english", "")))
+        calc_details = html.escape(str(ins.get("calculation_details", "")))
         insights_html += f"""
         <div style="margin-bottom: 1.5rem; padding: 1rem; border-left: 4px solid #2563eb; background: #f8fafc; border-radius: 4px;">
-            <h4 style="margin: 0 0 0.5rem 0; color: #1e293b; font-size: 1.05rem;">{ins.get("title")}</h4>
-            <p style="margin: 0 0 0.5rem 0; color: #475569; line-height: 1.5;">{ins.get("plain_english")}</p>
-            <small style="color: #64748b; font-family: monospace;">Evidence: {ins.get("calculation_details", "")}</small>
+            <h4 style="margin: 0 0 0.5rem 0; color: #1e293b; font-size: 1.05rem;">{title}</h4>
+            <p style="margin: 0 0 0.5rem 0; color: #475569; line-height: 1.5;">{plain_english}</p>
+            <small style="color: #64748b; font-family: monospace;">Evidence: {calc_details}</small>
         </div>
         """
 
@@ -185,19 +189,26 @@ def generate_html_report(result_payload: dict) -> str:
             is_best = row.get("is_best", False)
             bg = "#eff6ff" if is_best else "#ffffff"
             weight = "bold" if is_best else "normal"
+            model_name = html.escape(str(row.get("model", "")))
             metric_cols = "".join(
                 [
-                    f"<td style='padding: 8px 12px; border-bottom: 1px solid #e2e8f0;'>{v}</td>"
+                    f"<td style='padding: 8px 12px; border-bottom: 1px solid #e2e8f0;'>{html.escape(str(v))}</td>"
                     for k, v in row.items()
                     if k not in ["is_best", "model"]
                 ]
             )
             table_rows += f"""
             <tr style="background: {bg}; font-weight: {weight};">
-                <td style="padding: 8px 12px; border-bottom: 1px solid #e2e8f0;">{row.get("model")}</td>
+                <td style="padding: 8px 12px; border-bottom: 1px solid #e2e8f0;">{model_name}</td>
                 {metric_cols}
             </tr>
             """
+
+    target_col = html.escape(str(problem.get("target_column") or "None"))
+    reason_text = html.escape(str(problem.get("reason", "")))
+    problem_type_str = html.escape(
+        str(problem.get("problem_type", "Exploratory")).replace("_", " ").title()
+    )
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -224,8 +235,8 @@ def generate_html_report(result_payload: dict) -> str:
     <h2>Executive Overview</h2>
     <div class="metric-card">
         <p><strong>Dataset Shape:</strong> {schema.get("row_count", 0):,} rows &times; {schema.get("column_count", 0)} columns</p>
-        <p><strong>Detected Problem:</strong> {problem.get("problem_type", "Exploratory").replace("_", " ").title()} on target <code>{problem.get("target_column") or "None"}</code></p>
-        <p><strong>Objective Rationale:</strong> {problem.get("reason", "")}</p>
+        <p><strong>Detected Problem:</strong> {problem_type_str} on target <code>{target_col}</code></p>
+        <p><strong>Objective Rationale:</strong> {reason_text}</p>
     </div>
 
     <h2>Benchmarking & Model Comparison</h2>

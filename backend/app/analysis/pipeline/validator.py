@@ -7,6 +7,7 @@ import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 
@@ -38,6 +39,11 @@ def prepare_supervised_data(
     """Prepares clean, isolated train/test sets with leakage-free preprocessing."""
     # Drop rows where target is missing
     clean_df = df.dropna(subset=[target_col]).copy()
+    if len(clean_df) < 5:
+        raise ValueError(
+            f"Insufficient valid rows ({len(clean_df)}) for modeling on target '{target_col}'. Minimum 5 required."
+        )
+
     y_raw = clean_df[target_col]
     x_raw = clean_df[[c for c in feature_cols if c in clean_df.columns]]
 
@@ -48,7 +54,15 @@ def prepare_supervised_data(
         if pd.api.types.is_numeric_dtype(x_raw[col]):
             num_features.append(col)
         else:
-            cat_features.append(col)
+            nunique = x_raw[col].nunique(dropna=True)
+            # Safeguard Render Free 512MB RAM: omit high-cardinality text/id columns (>50 unique)
+            if 1 < nunique <= 50:
+                cat_features.append(col)
+
+    if not num_features and not cat_features:
+        raise ValueError(
+            "No valid numerical or low-cardinality categorical predictor features available for modeling."
+        )
 
     has_imbalance = False
     imbalance_warning = None
@@ -57,6 +71,11 @@ def prepare_supervised_data(
     if is_classification:
         # Check class balance
         val_counts = y_raw.value_counts(normalize=True)
+        if len(val_counts) < 2:
+            raise ValueError(
+                f"Classification target '{target_col}' requires at least 2 distinct classes in data (found {len(val_counts)})."
+            )
+
         minority_prop = float(val_counts.min())
         majority_prop = float(val_counts.max())
         class_labels = [str(k) for k in val_counts.index]
@@ -85,7 +104,15 @@ def prepare_supervised_data(
                 x_raw, y_array, test_size=test_size, random_state=random_state
             )
     else:
-        y_array = pd.to_numeric(y_raw, errors="coerce").values
+        y_numeric = pd.to_numeric(y_raw, errors="coerce")
+        valid_idx = y_numeric.notna()
+        if valid_idx.sum() < 5:
+            raise ValueError(
+                f"Target '{target_col}' contains insufficient numeric values for regression (minimum 5 required)."
+            )
+        x_raw = x_raw.loc[valid_idx]
+        y_array = y_numeric.loc[valid_idx].values
+
         x_tr, x_te, y_tr, y_te = train_test_split(
             x_raw, y_array, test_size=test_size, random_state=random_state
         )
@@ -97,17 +124,16 @@ def prepare_supervised_data(
             ("imputer", SimpleImputer(strategy="median")),
             ("scaler", StandardScaler()),
         ]
-        from sklearn.pipeline import Pipeline
-
         transformers.append(("num", Pipeline(num_pipeline), num_features))
 
     if cat_features:
         cat_pipeline = [
             ("imputer", SimpleImputer(strategy="most_frequent")),
-            ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
+            (
+                "encoder",
+                OneHotEncoder(handle_unknown="ignore", sparse_output=False, max_categories=20),
+            ),
         ]
-        from sklearn.pipeline import Pipeline
-
         transformers.append(("cat", Pipeline(cat_pipeline), cat_features))
 
     preprocessor = ColumnTransformer(transformers=transformers, remainder="drop")

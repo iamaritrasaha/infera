@@ -3,11 +3,13 @@
 from dataclasses import dataclass
 
 import numpy as np
+from sklearn.compose import TransformedTargetRegressor
 from sklearn.dummy import DummyRegressor
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.linear_model import ElasticNet, Lasso, LinearRegression, Ridge
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import KFold, cross_val_score
+from sklearn.preprocessing import StandardScaler
 
 from app.analysis.pipeline.validator import PreprocessedDataset
 
@@ -56,27 +58,40 @@ def train_and_evaluate_regression(dataset: PreprocessedDataset) -> RegressionCom
         ("dummy", "Dummy Regressor (Baseline)", DummyRegressor(strategy="median")),
         ("linear", "Linear Regression", LinearRegression()),
         ("ridge", "Ridge Regression (L2)", Ridge(alpha=1.0)),
-        ("lasso", "Lasso Regression (L1)", Lasso(alpha=1.0, max_iter=5000, random_state=42)),
+        (
+            "lasso",
+            "Lasso Regression (L1)",
+            TransformedTargetRegressor(
+                regressor=Lasso(alpha=0.01, max_iter=5000, random_state=42),
+                transformer=StandardScaler(),
+            ),
+        ),
         (
             "elastic_net",
             "ElasticNet (L1+L2)",
-            ElasticNet(alpha=1.0, l1_ratio=0.5, max_iter=5000, random_state=42),
+            TransformedTargetRegressor(
+                regressor=ElasticNet(alpha=0.01, l1_ratio=0.5, max_iter=5000, random_state=42),
+                transformer=StandardScaler(),
+            ),
         ),
         (
             "random_forest",
             "Random Forest Regressor",
-            RandomForestRegressor(n_estimators=100, random_state=42),
+            RandomForestRegressor(n_estimators=50, max_depth=8, n_jobs=1, random_state=42),
         ),
         (
             "gradient_boosting",
             "Gradient Boosting Regressor",
-            GradientBoostingRegressor(n_estimators=100, random_state=42),
+            GradientBoostingRegressor(n_estimators=50, max_depth=6, random_state=42),
         ),
     ]
 
     # Dynamic CV folds (minimum 2, standard 5)
-    n_splits = min(5, max(2, len(y_tr) // 10))
-    cv = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+    if len(y_tr) >= 4:
+        n_splits = min(5, max(2, len(y_tr) // 10))
+        cv = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+    else:
+        cv = None
 
     results: list[RegressionModelResult] = []
 
@@ -91,19 +106,23 @@ def train_and_evaluate_regression(dataset: PreprocessedDataset) -> RegressionCom
             rmse = float(np.sqrt(mse))
 
             # Cross validation
-            try:
-                cv_scores = cross_val_score(model, x_tr, y_tr, cv=cv, scoring="r2")
-                cv_mean = float(np.mean(cv_scores))
-                cv_std = float(np.std(cv_scores))
-            except Exception:
+            if cv is not None:
+                try:
+                    cv_scores = cross_val_score(model, x_tr, y_tr, cv=cv, scoring="r2")
+                    cv_mean = float(np.mean(cv_scores))
+                    cv_std = float(np.std(cv_scores))
+                except Exception:
+                    cv_mean, cv_std = r2, 0.0
+            else:
                 cv_mean, cv_std = r2, 0.0
 
             # Feature importances or linear weights
             importances: list[dict[str, float | str]] = []
-            if hasattr(model, "feature_importances_") and len(feat_names) == len(
-                model.feature_importances_
+            base_estimator = getattr(model, "regressor_", model)
+            if hasattr(base_estimator, "feature_importances_") and len(feat_names) == len(
+                base_estimator.feature_importances_
             ):
-                raw_weights = model.feature_importances_
+                raw_weights = base_estimator.feature_importances_
                 sorted_idx = np.argsort(raw_weights)[::-1]
                 for idx in sorted_idx[:10]:
                     importances.append(
@@ -112,15 +131,15 @@ def train_and_evaluate_regression(dataset: PreprocessedDataset) -> RegressionCom
                             "importance": round(float(raw_weights[idx]), 4),
                         }
                     )
-            elif hasattr(model, "coef_") and len(feat_names) == len(model.coef_):
-                raw_coefs = np.abs(model.coef_)
+            elif hasattr(base_estimator, "coef_") and len(feat_names) == len(base_estimator.coef_):
+                raw_coefs = np.abs(base_estimator.coef_)
                 sorted_idx = np.argsort(raw_coefs)[::-1]
                 for idx in sorted_idx[:10]:
                     importances.append(
                         {
                             "feature": feat_names[idx],
                             "importance": round(float(raw_coefs[idx]), 4),
-                            "signed_coefficient": round(float(model.coef_[idx]), 4),
+                            "signed_coefficient": round(float(base_estimator.coef_[idx]), 4),
                         }
                     )
 
@@ -184,11 +203,18 @@ def train_and_evaluate_regression(dataset: PreprocessedDataset) -> RegressionCom
 
     # Summary insight
     diff_dummy = best_candidate.r2_test - results[0].r2_test
-    insight = (
-        f"'{best_candidate.display_name}' achieved superior predictive performance on held-out test data "
-        f"with R² = {best_candidate.r2_test:.3f} and RMSE = {best_candidate.rmse_test:.2f}, "
-        f"surpassing baseline by +{diff_dummy:.3f} R² variance explained."
-    )
+    if best_candidate.r2_test <= 0:
+        insight = (
+            f"No candidate model exceeded the baseline mean predictor on held-out test data "
+            f"(best model '{best_candidate.display_name}' test R² = {best_candidate.r2_test:.3f}, RMSE = {best_candidate.rmse_test:.2f}). "
+            "The target column exhibits high residual noise or non-linear dynamics not captured by linear/tree specifications."
+        )
+    else:
+        insight = (
+            f"'{best_candidate.display_name}' achieved superior predictive performance on held-out test data "
+            f"with R² = {best_candidate.r2_test:.3f} and RMSE = {best_candidate.rmse_test:.2f}, "
+            f"surpassing baseline by +{diff_dummy:.3f} R² variance explained."
+        )
 
     return RegressionComparison(
         target_column=dataset.target_name,

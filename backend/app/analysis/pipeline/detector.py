@@ -34,7 +34,8 @@ def detect_problem_type(
         n_unique = series.nunique()
         is_num = user_target in schema.numerical_columns
 
-        if is_num and n_unique > 10:
+        is_float = pd.api.types.is_float_dtype(series)
+        if is_num and (n_unique > 10 or (is_float and n_unique > 2)):
             return ProblemDetectionResult(
                 problem_type="regression",
                 target_column=user_target,

@@ -21,14 +21,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=ghcr.io/astral-sh/uv:0.12.22 /uv /usr/local/bin/uv
 
 # Copy project specification files
-COPY pyproject.toml README.md ./
+COPY backend/pyproject.toml backend/README.md ./
 
 # Install dependencies into system environment
-RUN uv pip install --system --no-cache -e .
+RUN uv pip install --system --no-cache .
 
 # Copy application code and sample datasets
-COPY app/ ./app/
-COPY ../sample_data/ /app/sample_data/
+COPY backend/app/ ./app/
+COPY sample_data/ /app/sample_data/
 
 # Run as non-root user for security
 RUN useradd -m inferauser && chown -R inferauser:inferauser /app

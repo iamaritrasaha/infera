@@ -1,5 +1,7 @@
 """Results retrieval and downloadable report export endpoints."""
 
+import re
+
 from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from app.models.schemas import AnalysisResponse
@@ -33,16 +35,19 @@ def download_report(
             detail=f"No completed analysis found for dataset '{dataset_id}'.",
         )
 
-    name = payload.get("dataset_name", "infera_report").replace(" ", "_").lower()
+    raw_name = payload.get("dataset_name", "infera_report")
+    safe_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", str(raw_name)).strip("_")[:50] or "infera_report"
     reports = payload.get("reports", {})
 
     if format == "markdown":
         content = reports.get("markdown", "# Infera Analysis Report\nNo markdown report available.")
-        headers = {"Content-Disposition": f"attachment; filename={name}_evidence_report.md"}
+        headers = {"Content-Disposition": f'attachment; filename="{safe_name}_evidence_report.md"'}
         return Response(content=content, media_type="text/markdown", headers=headers)
     else:
         content = reports.get(
             "html", "<h1>Infera Analysis Report</h1><p>No HTML report available.</p>"
         )
-        headers = {"Content-Disposition": f"attachment; filename={name}_evidence_report.html"}
+        headers = {
+            "Content-Disposition": f'attachment; filename="{safe_name}_evidence_report.html"'
+        }
         return Response(content=content, media_type="text/html", headers=headers)

@@ -71,19 +71,23 @@ def train_and_evaluate_classification(dataset: PreprocessedDataset) -> Classific
         (
             "random_forest",
             "Random Forest Classifier",
-            RandomForestClassifier(n_estimators=100, random_state=42),
+            RandomForestClassifier(n_estimators=50, max_depth=8, n_jobs=1, random_state=42),
         ),
         (
             "gradient_boosting",
             "Gradient Boosting Classifier",
-            GradientBoostingClassifier(n_estimators=100, random_state=42),
+            GradientBoostingClassifier(n_estimators=50, max_depth=6, random_state=42),
         ),
     ]
 
     # Dynamic CV folds (minimum 2, standard 5)
-    min_class_count = min(np.bincount(y_tr)) if len(y_tr) > 0 else 2
-    n_splits = min(5, max(2, min_class_count))
-    cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+    counts = np.bincount(y_tr) if len(y_tr) > 0 else np.array([])
+    min_class_count = int(np.min(counts)) if len(counts) > 0 else 0
+    if min_class_count >= 2:
+        n_splits = min(5, min_class_count)
+        cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+    else:
+        cv = None
 
     results: list[ClassificationModelResult] = []
 
@@ -114,11 +118,14 @@ def train_and_evaluate_classification(dataset: PreprocessedDataset) -> Classific
                     roc_auc_val = None
 
             # Cross validation
-            try:
-                cv_scores = cross_val_score(model, x_tr, y_tr, cv=cv, scoring="f1_macro")
-                cv_mean = float(np.mean(cv_scores))
-                cv_std = float(np.std(cv_scores))
-            except Exception:
+            if cv is not None:
+                try:
+                    cv_scores = cross_val_score(model, x_tr, y_tr, cv=cv, scoring="f1_macro")
+                    cv_mean = float(np.mean(cv_scores))
+                    cv_std = float(np.std(cv_scores))
+                except Exception:
+                    cv_mean, cv_std = f1_m, 0.0
+            else:
                 cv_mean, cv_std = f1_m, 0.0
 
             # Confusion Matrix

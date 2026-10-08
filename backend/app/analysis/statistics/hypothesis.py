@@ -222,6 +222,19 @@ def run_chi_square_test(
         dof = int(chi2_res.dof)
         rejected = p_val < alpha
 
+        expected = chi2_res.expected_freq
+        low_expected_pct = float(np.mean(expected < 5)) * 100
+        cochran_note = (
+            f"Contingency matrix size: {ctab.shape[0]}x{ctab.shape[1]}, Degrees of freedom: {dof}."
+        )
+        if low_expected_pct > 20.0:
+            cochran_note += (
+                f" Warning: Cochran condition violated ({low_expected_pct:.1f}% of cells have expected frequency < 5). "
+                "Interpret association with caution."
+            )
+        else:
+            cochran_note += " Satisfies Cochran condition (adequate cell frequencies)."
+
         return HypothesisTestResult(
             test_name="Pearson Chi-Square Test of Independence",
             feature_a=cat_col_a,
@@ -238,7 +251,7 @@ def run_chi_square_test(
                 if rejected
                 else f"No statistically significant association detected between '{cat_col_a}' and '{cat_col_b}'."
             ),
-            assumptions_note=f"Contingency matrix size: {ctab.shape[0]}x{ctab.shape[1]}, Degrees of freedom: {dof}.",
+            assumptions_note=cochran_note,
         )
     except Exception:
         return None
