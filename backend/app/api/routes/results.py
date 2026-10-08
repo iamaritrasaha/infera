@@ -2,7 +2,7 @@
 
 import re
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, HTTPException, Path, Query, Response, status
 
 from app.models.schemas import AnalysisResponse
 from app.services.analysis_service import get_cached_result
@@ -11,7 +11,9 @@ router = APIRouter(prefix="/api/results", tags=["Results & Reports"])
 
 
 @router.get("/{dataset_id}", response_model=AnalysisResponse)
-def get_analysis_results(dataset_id: str) -> AnalysisResponse:
+def get_analysis_results(
+    dataset_id: str = Path(..., pattern=r"^[a-zA-Z0-9_\-]{8,64}$"),
+) -> AnalysisResponse:
     """Retrieves full cached analysis results for a dataset session."""
     payload = get_cached_result(dataset_id)
     if not payload:
@@ -24,7 +26,7 @@ def get_analysis_results(dataset_id: str) -> AnalysisResponse:
 
 @router.get("/{dataset_id}/report")
 def download_report(
-    dataset_id: str,
+    dataset_id: str = Path(..., pattern=r"^[a-zA-Z0-9_\-]{8,64}$"),
     format: str = Query("markdown", pattern="^(markdown|html)$"),
 ) -> Response:
     """Exports and downloads an evidence report as Markdown (.md) or standalone HTML (.html)."""

@@ -54,8 +54,16 @@ class UploadResponse(BaseModel):
 class AnalyzeRequest(BaseModel):
     """Request to initiate full pipeline analysis."""
 
-    dataset_id: str = Field(..., description="Unique dataset session ID")
-    target_column: str | None = Field(None, description="Optional user-selected target column")
+    dataset_id: str = Field(
+        ...,
+        pattern=r"^[a-zA-Z0-9_\-]{8,64}$",
+        description="Unique dataset session ID (UUID or safe token)",
+    )
+    target_column: str | None = Field(
+        None,
+        max_length=100,
+        description="Optional user-selected target column",
+    )
 
 
 class AnalysisResponse(BaseModel):

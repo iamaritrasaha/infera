@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 import numpy as np
+from sklearn.base import clone
 from sklearn.dummy import DummyClassifier
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
@@ -15,6 +16,7 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 from sklearn.model_selection import StratifiedKFold, cross_val_score
+from sklearn.pipeline import Pipeline
 
 from app.analysis.pipeline.validator import PreprocessedDataset
 
@@ -117,10 +119,19 @@ def train_and_evaluate_classification(dataset: PreprocessedDataset) -> Classific
                 except Exception:
                     roc_auc_val = None
 
-            # Cross validation
-            if cv is not None:
+            # Cross validation with preprocessing fitted strictly inside each fold
+            if (
+                cv is not None
+                and hasattr(dataset, "preprocessor")
+                and hasattr(dataset, "x_train_raw")
+            ):
                 try:
-                    cv_scores = cross_val_score(model, x_tr, y_tr, cv=cv, scoring="f1_macro")
+                    cv_pipeline = Pipeline(
+                        [("preprocessor", clone(dataset.preprocessor)), ("model", model)]
+                    )
+                    cv_scores = cross_val_score(
+                        cv_pipeline, dataset.x_train_raw, y_tr, cv=cv, scoring="f1_macro"
+                    )
                     cv_mean = float(np.mean(cv_scores))
                     cv_std = float(np.std(cv_scores))
                 except Exception:

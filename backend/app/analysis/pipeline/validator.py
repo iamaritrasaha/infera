@@ -19,6 +19,8 @@ class PreprocessedDataset:
     x_test: np.ndarray
     y_train: np.ndarray
     y_test: np.ndarray
+    x_train_raw: pd.DataFrame
+    preprocessor: ColumnTransformer
     feature_names: list[str]
     train_size: int
     test_size: int
@@ -160,6 +162,8 @@ def prepare_supervised_data(
         x_test=np.asarray(x_test_trans, dtype=float),
         y_train=np.asarray(y_tr),
         y_test=np.asarray(y_te),
+        x_train_raw=x_tr,
+        preprocessor=preprocessor,
         feature_names=feature_names,
         train_size=len(x_tr),
         test_size=len(x_te),

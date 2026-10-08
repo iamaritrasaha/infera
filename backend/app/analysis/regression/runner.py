@@ -3,12 +3,14 @@
 from dataclasses import dataclass
 
 import numpy as np
+from sklearn.base import clone
 from sklearn.compose import TransformedTargetRegressor
 from sklearn.dummy import DummyRegressor
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.linear_model import ElasticNet, Lasso, LinearRegression, Ridge
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import KFold, cross_val_score
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 from app.analysis.pipeline.validator import PreprocessedDataset
@@ -105,10 +107,19 @@ def train_and_evaluate_regression(dataset: PreprocessedDataset) -> RegressionCom
             mse = float(mean_squared_error(y_te, y_pred))
             rmse = float(np.sqrt(mse))
 
-            # Cross validation
-            if cv is not None:
+            # Cross validation with preprocessing fitted strictly inside each fold
+            if (
+                cv is not None
+                and hasattr(dataset, "preprocessor")
+                and hasattr(dataset, "x_train_raw")
+            ):
                 try:
-                    cv_scores = cross_val_score(model, x_tr, y_tr, cv=cv, scoring="r2")
+                    cv_pipeline = Pipeline(
+                        [("preprocessor", clone(dataset.preprocessor)), ("model", model)]
+                    )
+                    cv_scores = cross_val_score(
+                        cv_pipeline, dataset.x_train_raw, y_tr, cv=cv, scoring="r2"
+                    )
                     cv_mean = float(np.mean(cv_scores))
                     cv_std = float(np.std(cv_scores))
                 except Exception:

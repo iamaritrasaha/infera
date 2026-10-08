@@ -75,5 +75,9 @@ class Settings(BaseSettings):
     DATASET_CACHE_TTL_SECONDS: int = 3600
     MAX_CACHED_DATASETS: int = 20
 
+    # Concurrency and rate protection on free tier
+    MAX_CONCURRENT_ANALYSES: int = 1
+    ANALYSIS_SEMAPHORE_TIMEOUT_SECONDS: float = 10.0
+
 
 settings = Settings()

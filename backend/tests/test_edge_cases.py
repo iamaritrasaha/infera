@@ -12,6 +12,7 @@ from app.analysis.pipeline.planner import plan_analyses
 from app.analysis.pipeline.runner import run_full_analysis
 from app.analysis.pipeline.validator import prepare_supervised_data
 from app.analysis.profiler.schema import inspect_schema
+from app.analysis.regression.runner import train_and_evaluate_regression
 from app.analysis.statistics.hypothesis import run_chi_square_test
 from app.core.config import Settings
 from app.main import app
@@ -210,3 +211,52 @@ def test_cors_config_parsing_from_env(monkeypatch):
     s = Settings()
     assert "https://frontend.vercel.app" in s.CORS_ORIGINS
     assert "http://localhost:3000" in s.CORS_ORIGINS
+
+
+def test_cv_preprocessing_inside_folds_isolation():
+    """Verify that preprocessing is executed strictly inside each CV fold without data leakage."""
+    df = pd.DataFrame(
+        {
+            "num": [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0],
+            "cat": ["A", "B", "A", "B", "A", "B", "A", "B", "A", "B"],
+            "target": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
+        }
+    )
+    prepped = prepare_supervised_data(df, target_col="target", feature_cols=["num", "cat"])
+    assert hasattr(prepped, "x_train_raw")
+    assert hasattr(prepped, "preprocessor")
+    assert isinstance(prepped.x_train_raw, pd.DataFrame)
+
+    res = train_and_evaluate_regression(prepped)
+    assert len(res.models) > 0
+    for m in res.models:
+        assert isinstance(m.cv_r2_mean, float)
+
+
+def test_invalid_dataset_id_pattern_rejected():
+    """Invalid, malicious, or path-traversal dataset IDs must be rejected with 422."""
+    malicious_ids = [
+        "../../etc/passwd",
+        "<script>alert(1)</script>",
+        "short",  # < 8 chars
+        "a" * 100,  # > 64 chars
+        "invalid;DROP TABLE users;--",
+    ]
+    for bad_id in malicious_ids:
+        resp = client.post("/api/analyze", json={"dataset_id": bad_id})
+        assert resp.status_code == 422, f"Failed to reject: {bad_id}"
+
+
+def test_concurrency_semaphore_blocks_excessive_requests(monkeypatch):
+    """When analysis semaphore is exhausted, returns 429 Too Many Requests."""
+    import asyncio
+
+    from app.api.routes import analysis
+
+    busy_sem = asyncio.Semaphore(0)
+    monkeypatch.setattr(analysis, "_get_semaphore", lambda: busy_sem)
+    monkeypatch.setattr(analysis.settings, "ANALYSIS_SEMAPHORE_TIMEOUT_SECONDS", 0.05)
+
+    resp = client.post("/api/analyze", json={"dataset_id": "valid-session-id-12345"})
+    assert resp.status_code == 429
+    assert "capacity" in resp.json()["detail"].lower()

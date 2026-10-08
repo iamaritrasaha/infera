@@ -189,20 +189,12 @@ docker compose up --build
 
 ## Free-Tier Deployment Strategy (₹0 Budget)
 
-### Backend Deployment (Render Free)
+For step-by-step instructions, environment variable tables, and the production smoke-test checklist, see [DEPLOYMENT.md](./DEPLOYMENT.md).
 
-1. Connect your GitHub repository to [Render](https://render.com/).
-2. Create a new **Web Service**:
-   - **Runtime:** Python 3
-   - **Build Command:** `cd backend && pip install --upgrade pip && pip install -e .`
-   - **Start Command:** `cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-   - **Health Check Path:** `/health`
-3. Environment Variables:
-   - `MAX_UPLOAD_SIZE_BYTES`: `15728640` (15 MB)
-   - `MAX_ROW_COUNT`: `50000`
-   - `CORS_ORIGINS`: `["https://your-frontend.vercel.app","*"]`
+### Quick Deployment Summary:
 
-Alternatively, deploy using the included `render.yaml` blueprint.
+- **Backend (Render Free)**: Deploy via blueprint [`render.yaml`](./render.yaml) or Web Service with build command `cd backend && pip install --upgrade pip && pip install .` and start command `cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT`. Health probe at `/health`.
+- **Frontend (Vercel Hobby)**: Connect repository, set root directory to `frontend`, set `NEXT_PUBLIC_API_URL` to your Render backend URL, and deploy with Next.js Turbopack preset.
 
 ### Frontend Deployment (Vercel Free)
 
