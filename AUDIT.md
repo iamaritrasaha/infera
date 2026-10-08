@@ -60,8 +60,8 @@ Browser checks exercise landing/About/dashboard navigation; samples; actual CSV 
 
 ## Deployment status and external blockers
 
-- Existing frontend: https://infera-omega.vercel.app. Vercel reports the original deployment READY at `4806303`; authenticated inspection returned HTTP 200. Public access requires Vercel Authentication. That verifies the old frontend response, not the new source changes or analysis.
-- Vercel project settings were accepted as Next.js with `frontend` root, `npm install`, `npm run build`, default output, and source files outside root disabled. Existing deployment logs already excluded Python backend files and showed a successful Next.js build. A future deployment still requires its own log and HTTP checks.
+- Deployed frontend: https://infera-omega.vercel.app. After the creator confirmed publication to main, commits `9db81d6` and `b566348` were pushed without rewriting history. Vercel deployment `dpl_DbE8Lu1Z8yum4C79mtfXPwxTapm2`, at `b566348`, is READY and aliases the production domain. Authenticated About inspection returned HTTP 200 and verified independent attribution, Open Source, matching icon references, and absence of the old badge and em dashes. Public access still requires Vercel Authentication.
+- Vercel project settings were accepted as Next.js with `frontend` root, `npm install`, `npm run build`, default output, and source files outside root disabled. The new production logs verify Next.js 16.4, successful build/output deployment, and exclusion of 71 backend files. No Python/scientific dependencies were packaged.
 - Vercel has no configured `NEXT_PUBLIC_API_URL`. The creator explicitly confirmed that **Render is not deployed**. No backend URL is invented, and no production upload, statistics, models, report download, CORS handshake, or cold start can be verified until it exists.
 - Render account/deployment access was unavailable. Exact Free-plan creation, environment, CORS, health-check, and smoke-test steps are in [DEPLOYMENT.md](DEPLOYMENT.md).
 - GitHub social preview is prepared as `assets/infera-social-preview.png`, using the unchanged website icon. The available browser is signed out and cannot open repository settings. The README icon can be published through Git; the settings upload remains a separate manual step.
@@ -75,15 +75,16 @@ Browser checks exercise landing/About/dashboard navigation; samples; actual CSV 
 4. **Resource bounds are practical safeguards**, not a measured guarantee for Render Free. Parsers and native scientific libraries can make transient allocations beyond cache budgets. Production load, peak memory, and cold-start duration remain unmeasured. Limits and deterministic subsampling are disclosed in results and documentation.
 5. **Statistical limits remain explicit:** observational associations do not establish causation; exploratory p-values are unadjusted for multiple comparisons; model scores describe this partition; automatic task selection is heuristic. Temporal/group independence is not inferred for every possible dataset. Sampling can exclude observations and reduces scope. Undefined metrics stay unavailable.
 6. **Browser coverage is Chromium at four viewport sizes.** Firefox, WebKit, physical mobile devices, and live deployment browser behavior remain separate checks.
-7. **GitHub social preview requires a signed-in settings upload.** The existing icon was preserved and all assets prepared. No personal account avatar was changed.
+7. **Browser printing currently prints the Markdown evidence preview.** The HTML download provides a formatted standalone report; its complete methodology appendix preserves escaped Markdown source. PDF printing is usable but is not a separately typeset report.
+8. **GitHub social preview requires a signed-in settings upload.** The existing icon was preserved and all assets prepared. No personal account avatar was changed.
 
 ## Git state
 
-Changes were reviewed and validated on `hrik/infera-audit`, preserving the existing history from `480630379e4415d85ca8f894694b8c15c49dd1af`. Source commit and final publication status are recorded after committing below. Publication requires the creator's final confirmation, as requested in the Git rules.
+Changes were reviewed and validated on `hrik/infera-audit`, preserving the existing history from `480630379e4415d85ca8f894694b8c15c49dd1af`. Source commit and final publication status are recorded after committing below. The creator explicitly confirmed publication to main; the push succeeded without force or rewritten history.
 
 
 - Validated source commit: `9db81d6bd3cb4b291bf583befddd78e792dc5d91`.
-- GitHub push and production redeployment: pending final confirmation.
+- GitHub main contains validated source and audit commits `9db81d6` and `b566348`. Production deployment is READY; live backend integration remains blocked as described above. This deployment-status documentation is committed separately afterward.
 - The documentation commit is listed in Git history and the final task response; a document cannot include its own eventual commit hash.
 
 ## Files modified

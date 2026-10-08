@@ -5,12 +5,12 @@ Infera uses a separate Python/FastAPI backend and Next.js frontend. No paid APIs
 ## Verified state on 9 October 2026
 
 - Repository: [iamaritrasaha/infera](https://github.com/iamaritrasaha/infera).
-- Frontend: [infera-omega.vercel.app](https://infera-omega.vercel.app), existing deployment READY at original commit `4806303`. Authenticated inspection returned HTTP 200. Public access is protected by Vercel Authentication.
-- Original deployment logs showed a successful Next.js build and exclusion of Python backend files. The current failure is missing backend infrastructure/configuration, not evidence that Python was packaged by this deployment.
+- Frontend: [infera-omega.vercel.app](https://infera-omega.vercel.app), updated production deployment READY at validated commit `b566348` after the creator confirmed pushing to main. Authenticated About inspection returned HTTP 200 and verified the updated solo attribution, badge, and icon references. Public access is protected by Vercel Authentication.
+- Updated deployment logs show a successful Next.js 16.4 build, exclusion of 71 backend files, and completed deployment. Missing backend infrastructure/configuration still prevents live analysis. Python scientific dependencies were not packaged by Vercel.
 - Vercel environment inspection returned no variables, including no `NEXT_PUBLIC_API_URL`.
 - The creator confirmed Render is **not deployed**. No backend public URL has been verified.
-- Vercel settings were updated to Next.js, `frontend` root, `npm run build` (runs `next build`), `npm install`, framework-default output directory, and no source files outside the root. The platform accepted the update; the next deployment still needs log and HTTP verification.
-- Local audit changes have not automatically become the live site. See [AUDIT.md](AUDIT.md) for validation and commit status.
+- Vercel settings were updated to Next.js, `frontend` root, `npm run build` (runs `next build`), `npm install`, framework-default output directory, and no source files outside the root. The platform accepted the update; the resulting production build and authenticated HTTP response have now been verified.
+- Source changes are pushed to main and the updated frontend is live. See [AUDIT.md](AUDIT.md) for validation, deployment evidence, and remaining blockers. Backend workflows have been verified locally against real Python computation, not on Render.
 
 ## 1. Create the backend on Render Free
 
