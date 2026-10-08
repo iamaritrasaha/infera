@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { AnalysisResponse, StructuredInsight } from "@/lib/types";
-import { Calculator, CheckCircle2, ChevronDown, ChevronUp, FileCode, ShieldCheck, Sparkles } from "lucide-react";
+import { AnalysisResponse } from "@/lib/types";
+import { Calculator, ChevronDown, ChevronUp, ShieldCheck, Sparkles } from "lucide-react";
 
 interface InsightsTabProps {
   data: AnalysisResponse;
@@ -28,7 +28,7 @@ export function InsightsTab({ data }: InsightsTabProps) {
       <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Sparkles className="w-5 h-5 text-blue-400" />
               <h3 className="text-base font-semibold text-white">Traceable, Evidence-Backed Insights</h3>
             </div>
@@ -72,9 +72,9 @@ export function InsightsTab({ data }: InsightsTabProps) {
                 className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden hover:border-slate-700 transition-colors"
               >
                 <div className="p-4 sm:p-5">
-                  <div className="flex items-start justify-between gap-4">
+                  <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
                     <div className="space-y-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800">
                           {ins.category.replace("_", " ")}
                         </span>
@@ -85,6 +85,8 @@ export function InsightsTab({ data }: InsightsTabProps) {
 
                     <button
                       onClick={() => toggleExpand(ins.id)}
+                      aria-expanded={isExpanded}
+                      aria-controls={`evidence-${ins.id}`}
                       className="flex items-center gap-1 text-xs font-medium text-blue-400 hover:text-blue-300 bg-blue-950/40 border border-blue-900/60 px-3 py-1.5 rounded-lg shrink-0 transition-colors"
                     >
                       <Calculator className="w-3.5 h-3.5" />
@@ -96,10 +98,10 @@ export function InsightsTab({ data }: InsightsTabProps) {
 
                 {/* Expanded Mathematical Traceability Drawer */}
                 {isExpanded && (
-                  <div className="px-5 py-4 bg-slate-950/80 border-t border-slate-800 text-xs space-y-3">
+                  <div id={`evidence-${ins.id}`} className="px-5 py-4 bg-slate-950/80 border-t border-slate-800 text-xs space-y-3">
                     <div className="flex items-center justify-between text-slate-400">
                       <span className="font-semibold text-slate-300 flex items-center gap-1.5">
-                        <ShieldCheck className="w-4 h-4 text-emerald-400" /> Computational Proof &amp; Raw Parameters
+                        <ShieldCheck className="w-4 h-4 text-emerald-400" /> Computational Evidence &amp; Raw Parameters
                       </span>
                       <span className="text-[10px] font-mono text-slate-500">ID: {ins.id}</span>
                     </div>

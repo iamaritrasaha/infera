@@ -25,7 +25,7 @@ export function ConfusionMatrixGrid({ matrix, labels }: ConfusionMatrixProps) {
         </div>
       </div>
 
-      <div className="flex flex-col items-center">
+      <div className="overflow-x-auto">
         <div className="inline-block">
           <table className="border-collapse table-fixed text-xs">
             <thead>
@@ -67,7 +67,7 @@ export function ConfusionMatrixGrid({ matrix, labels }: ConfusionMatrixProps) {
                           className={`p-3 text-center border border-slate-800 transition-colors ${bgClass}`}
                         >
                           <div className="font-mono text-sm">{val}</div>
-                          <div className="text-[10px] opacity-75">{pct}%</div>
+                          <div className="text-[10px] opacity-75">{pct}% of all</div>
                         </td>
                       );
                     })}
@@ -78,7 +78,7 @@ export function ConfusionMatrixGrid({ matrix, labels }: ConfusionMatrixProps) {
           </table>
         </div>
 
-        <div className="flex items-center gap-6 mt-3 text-[11px] text-slate-400">
+        <div className="flex flex-wrap items-center gap-3 mt-3 text-[11px] text-slate-400">
           <span className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded bg-emerald-600 inline-block"></span> Correct Predictions (Diagonal)
           </span>

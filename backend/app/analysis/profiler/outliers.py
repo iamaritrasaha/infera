@@ -122,9 +122,9 @@ def analyze_outliers(df: pd.DataFrame, numerical_cols: list[str]) -> OutlierProf
             "No substantial statistical outliers detected across analyzed numerical attributes."
         )
     elif total_outliers < 10:
-        recommendation = "Minor tail variations present. Standard preprocessing (e.g. StandardScaler or RobustScaler) will handle these safely."
+        recommendation = "Minor tail variations are present. Inspect them in context; scaling does not correct measurement errors."
     else:
-        recommendation = "Notable tail values detected. Decision tree and ensemble methods will be robust to these variations without clipping."
+        recommendation = "Notable tail values are present. Review their meaning before choosing robust methods or clipping; unusual values may be valid observations."
 
     return OutlierProfile(
         total_numerical_columns_analyzed=len(profiles),

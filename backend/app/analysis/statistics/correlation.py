@@ -29,8 +29,8 @@ class CorrelationMatrix:
     """Full correlation matrices and key relationship rankings."""
 
     columns: list[str]
-    pearson_matrix: list[list[float]]
-    spearman_matrix: list[list[float]]
+    pearson_matrix: list[list[float | None]]
+    spearman_matrix: list[list[float | None]]
     top_correlations: list[CorrelationPair]
     notable_negative_correlations: list[CorrelationPair]
 
@@ -57,7 +57,7 @@ def compute_correlations(
     for c in numerical_cols:
         if c in df.columns:
             s = pd.to_numeric(df[c], errors="coerce").dropna()
-            if len(s) >= 4 and s.std(ddof=1) > 1e-9:
+            if len(s) >= 4 and s.nunique() > 1:
                 valid_cols.append(c)
 
     if len(valid_cols) < 2:
@@ -72,8 +72,8 @@ def compute_correlations(
     sub_df = df[valid_cols].apply(pd.to_numeric, errors="coerce")
     n_cols = len(valid_cols)
 
-    p_mat: list[list[float]] = [[1.0] * n_cols for _ in range(n_cols)]
-    s_mat: list[list[float]] = [[1.0] * n_cols for _ in range(n_cols)]
+    p_mat = [[1.0 if i == j else None for j in range(n_cols)] for i in range(n_cols)]
+    s_mat = [[1.0 if i == j else None for j in range(n_cols)] for i in range(n_cols)]
     pairs: list[CorrelationPair] = []
 
     for i in range(n_cols):
@@ -81,7 +81,7 @@ def compute_correlations(
         for j in range(i + 1, n_cols):
             col_j = valid_cols[j]
             paired = sub_df[[col_i, col_j]].dropna()
-            if len(paired) < 5:
+            if len(paired) < 5 or paired[col_i].nunique() < 2 or paired[col_j].nunique() < 2:
                 continue
 
             xi = paired[col_i].values
@@ -93,7 +93,7 @@ def compute_correlations(
                 r_val = float(pr_res.statistic)
                 r_pval = float(pr_res.pvalue)
             except Exception:
-                r_val, r_pval = 0.0, 1.0
+                continue
 
             # Spearman
             try:
@@ -101,11 +101,13 @@ def compute_correlations(
                 s_val = float(sp_res.statistic)
                 s_pval = float(sp_res.pvalue)
             except Exception:
-                s_val, s_pval = 0.0, 1.0
+                continue
 
             # Fill symmetric matrices
-            r_clean = round(r_val, 4) if not np.isnan(r_val) else 0.0
-            s_clean = round(s_val, 4) if not np.isnan(s_val) else 0.0
+            if not all(np.isfinite(v) for v in [r_val, r_pval, s_val, s_pval]):
+                continue
+            r_clean = round(r_val, 4)
+            s_clean = round(s_val, 4)
             p_mat[i][j] = p_mat[j][i] = r_clean
             s_mat[i][j] = s_mat[j][i] = s_clean
 
@@ -120,16 +122,16 @@ def compute_correlations(
             sig_word = "statistically significant" if is_sig else "not statistically significant"
             english = (
                 f"'{col_i}' and '{col_j}' exhibit a {strength.replace('_', ' ')} {dir_word} correlation "
-                f"(Pearson r = {r_clean:+.2f}, p = {r_pval:.4f}), which is {sig_word}."
+                f"(Pearson r = {r_clean:+.2f}, p = {r_pval:.4g}), which is {sig_word} at an unadjusted 0.05 threshold. Exploratory comparisons do not prove causality."
             )
 
             pair_obj = CorrelationPair(
                 feature_a=col_i,
                 feature_b=col_j,
                 pearson_r=r_clean,
-                pearson_p_value=round(r_pval, 6),
+                pearson_p_value=r_pval,
                 spearman_rho=s_clean,
-                spearman_p_value=round(s_pval, 6),
+                spearman_p_value=s_pval,
                 strength=strength,
                 direction=direction,
                 is_statistically_significant=is_sig,
@@ -138,7 +140,7 @@ def compute_correlations(
                     "feature_a": col_i,
                     "feature_b": col_j,
                     "pearson_r": r_clean,
-                    "pearson_p_value": round(r_pval, 6),
+                    "pearson_p_value": r_pval,
                     "spearman_rho": s_clean,
                     "sample_size": len(paired),
                     "is_significant": is_sig,

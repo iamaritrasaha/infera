@@ -33,8 +33,8 @@ class ClassificationModelResult:
     f1_macro: float
     f1_weighted: float
     roc_auc: float | None
-    cv_score_mean: float
-    cv_score_std: float
+    cv_score_mean: float | None
+    cv_score_std: float | None
     is_best_model: bool
     confusion_matrix: list[list[int]]
     confusion_matrix_labels: list[str]
@@ -55,6 +55,10 @@ class ClassificationComparison:
     best_model_name: str
     summary_table: list[dict[str, str | float | None]]
     insight: str
+    preparation: dict
+    cv_folds: int
+    selection_method: str
+    failed_models: list[str]
 
 
 def train_and_evaluate_classification(dataset: PreprocessedDataset) -> ClassificationComparison:
@@ -69,11 +73,11 @@ def train_and_evaluate_classification(dataset: PreprocessedDataset) -> Classific
 
     models_to_run = [
         ("dummy", "Dummy Classifier (Baseline)", DummyClassifier(strategy="most_frequent")),
-        ("logistic", "Logistic Regression", LogisticRegression(max_iter=1000, random_state=42)),
+        ("logistic", "Logistic Regression", LogisticRegression(max_iter=1000, class_weight="balanced", random_state=42)),
         (
             "random_forest",
             "Random Forest Classifier",
-            RandomForestClassifier(n_estimators=50, max_depth=8, n_jobs=1, random_state=42),
+            RandomForestClassifier(n_estimators=50, max_depth=8, n_jobs=1, class_weight="balanced", random_state=42),
         ),
         (
             "gradient_boosting",
@@ -91,6 +95,7 @@ def train_and_evaluate_classification(dataset: PreprocessedDataset) -> Classific
     else:
         cv = None
 
+    failed_models: list[str] = []
     results: list[ClassificationModelResult] = []
 
     for key, name, model in models_to_run:
@@ -127,17 +132,19 @@ def train_and_evaluate_classification(dataset: PreprocessedDataset) -> Classific
             ):
                 try:
                     cv_pipeline = Pipeline(
-                        [("preprocessor", clone(dataset.preprocessor)), ("model", model)]
+                        [("preprocessor", clone(dataset.preprocessor)), ("model", clone(model))]
                     )
                     cv_scores = cross_val_score(
-                        cv_pipeline, dataset.x_train_raw, y_tr, cv=cv, scoring="f1_macro"
+                        cv_pipeline, dataset.x_train_raw, y_tr, cv=cv, scoring="f1_macro", error_score="raise"
                     )
+                    if not np.isfinite(cv_scores).all():
+                        raise ValueError("CV score unavailable")
                     cv_mean = float(np.mean(cv_scores))
                     cv_std = float(np.std(cv_scores))
                 except Exception:
-                    cv_mean, cv_std = f1_m, 0.0
+                    cv_mean, cv_std = None, None
             else:
-                cv_mean, cv_std = f1_m, 0.0
+                cv_mean, cv_std = None, None
 
             # Confusion Matrix
             cm = confusion_matrix(y_te, y_pred, labels=list(range(n_classes))).tolist()
@@ -183,8 +190,8 @@ def train_and_evaluate_classification(dataset: PreprocessedDataset) -> Classific
                     f1_macro=round(f1_m, 4),
                     f1_weighted=round(f1_w, 4),
                     roc_auc=roc_auc_val,
-                    cv_score_mean=round(cv_mean, 4),
-                    cv_score_std=round(cv_std, 4),
+                    cv_score_mean=round(cv_mean, 4) if cv_mean is not None else None,
+                    cv_score_std=round(cv_std, 4) if cv_std is not None else None,
                     is_best_model=False,
                     confusion_matrix=cm,
                     confusion_matrix_labels=class_labels,
@@ -192,16 +199,15 @@ def train_and_evaluate_classification(dataset: PreprocessedDataset) -> Classific
                 )
             )
         except Exception:
+            failed_models.append(name)
             continue
 
     if not results:
         raise ValueError("All classification models encountered mathematical fitting errors.")
 
-    # Select best model based on F1-macro (especially important for imbalanced data)
-    valid_candidates = [r for r in results if r.model_name != "dummy"]
-    best_candidate = (
-        max(valid_candidates, key=lambda x: x.f1_macro) if valid_candidates else results[0]
-    )
+    cv_candidates = [r for r in results if r.cv_score_mean is not None]
+    best_candidate = max(cv_candidates, key=lambda r: r.cv_score_mean) if cv_candidates else max(results, key=lambda r: r.f1_macro)
+    selection_method = "Training cross-validation macro F1" if cv_candidates else "Holdout macro F1 (CV unavailable; selection may be optimistic)"
 
     for r in results:
         if r.model_name == best_candidate.model_name:
@@ -218,14 +224,18 @@ def train_and_evaluate_classification(dataset: PreprocessedDataset) -> Classific
                 "precision": r.precision_macro,
                 "recall": r.recall_macro,
                 "roc_auc": r.roc_auc if r.roc_auc is not None else "N/A",
-                "cv_f1": f"{r.cv_score_mean:.3f} ± {r.cv_score_std:.3f}",
+                "cv_f1": f"{r.cv_score_mean:.3f} ± {r.cv_score_std:.3f}" if r.cv_score_mean is not None else "Unavailable",
                 "is_best": r.is_best_model,
             }
         )
 
+    baseline = next((r for r in results if r.model_name == "dummy"), None)
+    delta = best_candidate.f1_macro - baseline.f1_macro if baseline else None
     insight = (
-        f"'{best_candidate.display_name}' achieved top overall classification performance with "
-        f"F1-Macro = {best_candidate.f1_macro:.3f} and Accuracy = {best_candidate.accuracy_test * 100:.1f}%."
+        f"'{best_candidate.display_name}' selected by {selection_method}. "
+        f"Holdout macro F1 = {best_candidate.f1_macro:.3f}, accuracy = {best_candidate.accuracy_test * 100:.1f}%. "
+        + (f"Difference from the majority baseline: {delta:+.3f} macro F1. " if delta is not None else "Baseline unavailable. ")
+        + "The highest score does not establish useful predictive performance."
     )
     if dataset.has_class_imbalance:
         insight += " Class imbalance is present; evaluations emphasize balanced F1 and precision-recall trade-offs."
@@ -241,4 +251,8 @@ def train_and_evaluate_classification(dataset: PreprocessedDataset) -> Classific
         best_model_name=best_candidate.display_name,
         summary_table=summary_table,
         insight=insight,
+        preparation=dataset.preparation,
+        cv_folds=cv.n_splits if cv is not None else 0,
+        selection_method=selection_method,
+        failed_models=failed_models,
     )

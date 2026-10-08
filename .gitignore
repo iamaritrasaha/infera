@@ -28,3 +28,8 @@ node_modules/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Browser verification artifacts
+frontend/test-results/
+frontend/playwright-report/
+frontend/*.tsbuildinfo

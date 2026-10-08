@@ -15,7 +15,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Infera — Automated Data Science Platform | Turn Data Into Evidence",
+  authors: [{ name: "Aritra Saha", url: "https://github.com/iamaritrasaha" }],
+  creator: "Aritra Saha",
+  metadataBase: new URL("https://infera-omega.vercel.app"),
+  openGraph: { title: "Infera", description: "Turn data into evidence.", images: [{ url: "/infera-icon.png", width: 512, height: 512, alt: "Infera" }] },
+  twitter: { card: "summary", title: "Infera", images: ["/infera-icon.png"] },
+  title: "Infera: Automated Data Science Platform | Turn Data Into Evidence",
   description:
     "Upload structured datasets and automatically profile quality, formulate problems, test hypotheses, compare machine learning models, and generate evidence-backed findings.",
 };
@@ -28,8 +33,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}>
       <body className="min-h-full flex flex-col bg-slate-950 text-slate-100 selection:bg-blue-600 selection:text-white">
+        <a href="#main-content" className="skip-link">Skip to content</a>
         <Navbar />
-        <main className="flex-1">{children}</main>
+        <main id="main-content" className="flex-1 min-w-0">{children}</main>
         <Footer />
       </body>
     </html>

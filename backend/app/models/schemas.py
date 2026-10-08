@@ -48,6 +48,7 @@ class UploadResponse(BaseModel):
     health_score: int
     columns: list[ColumnSummary]
     potential_targets: list[dict[str, str]]
+    recommended_target: str | None = None
     preview_rows: list[dict[str, Any]]
 
 

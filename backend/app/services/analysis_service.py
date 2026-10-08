@@ -1,5 +1,7 @@
 """Analysis execution service and result caching."""
 
+import json
+import threading
 import time
 
 from app.analysis.pipeline.runner import run_full_analysis
@@ -15,23 +17,35 @@ class AnalysisResultCache:
         self.max_items = max_items
         self.ttl = ttl_seconds
         self._cache: dict[str, tuple[float, dict]] = {}
+        self._lock = threading.RLock()
 
     def put(self, analysis_id: str, payload: dict):
-        now = time.time()
-        self._cache[analysis_id] = (now, payload)
-        if len(self._cache) > self.max_items:
-            oldest = sorted(self._cache.items(), key=lambda item: item[1][0])[0][0]
-            del self._cache[oldest]
+        with self._lock:
+            now = time.monotonic()
+            for key in list(self._cache):
+                if now - self._cache[key][0] > self.ttl:
+                    del self._cache[key]
+            size = len(json.dumps(payload).encode())
+            # Python dict/list overhead exceeds wire JSON size; conservatively budget 4x.
+            size *= 4
+            if size > settings.MAX_CACHE_MEMORY_BYTES:
+                return
+            self._cache.pop(analysis_id, None)
+            while self._cache and (len(self._cache) >= self.max_items or
+                sum(len(json.dumps(e[1]).encode()) * 4 for e in self._cache.values()) + size > settings.MAX_CACHE_MEMORY_BYTES):
+                del self._cache[min(self._cache, key=lambda k: self._cache[k][0])]
+            self._cache[analysis_id] = (now, payload)
 
     def get(self, analysis_id: str) -> dict | None:
-        entry = self._cache.get(analysis_id)
-        if not entry:
-            return None
-        ts, payload = entry
-        if time.time() - ts > self.ttl:
-            del self._cache[analysis_id]
-            return None
-        return payload
+        with self._lock:
+            entry = self._cache.get(analysis_id)
+            if not entry:
+                return None
+            ts, payload = entry
+            if time.monotonic() - ts > self.ttl:
+                del self._cache[analysis_id]
+                return None
+            return payload
 
 
 result_cache = AnalysisResultCache(
@@ -40,25 +54,25 @@ result_cache = AnalysisResultCache(
 )
 
 
-def execute_analysis(dataset_id: str, target_column: str | None = None) -> dict:
+def execute_analysis(dataset_id: str, target_column: str | None = None, owner: str | None = None) -> dict:
     """Retrieves dataset from session, executes master analysis, and caches result."""
-    entry = session_store.get(dataset_id)
+    entry = session_store.get(dataset_id, owner)
     if not entry:
         raise ValueError(
             f"Dataset session '{dataset_id}' has expired or does not exist. Please re-upload."
         )
 
     df, name = entry
-    logger.info(
-        f"Initiating full analysis on dataset '{name}' ({len(df)} rows, target: '{target_column}')"
-    )
+    existing = result_cache.get(dataset_id)
+    if existing and existing.get("requested_target") == target_column:
+        return existing
+    logger.info("Starting analysis with %d rows", len(df))
 
     payload = run_full_analysis(df, dataset_name=name, user_target=target_column)
     payload["dataset_id"] = dataset_id
+    payload["requested_target"] = target_column
 
     # Cache under dataset_id (or dataset_id + target key)
-    cache_key = f"{dataset_id}_{target_column or 'auto'}"
-    result_cache.put(cache_key, payload)
     result_cache.put(dataset_id, payload)
 
     return payload

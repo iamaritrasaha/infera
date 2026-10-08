@@ -64,7 +64,7 @@ def plan_analyses(
         if c.name != target
         and not c.is_id_candidate
         and not c.is_constant
-        and c.inferred_type != "text"
+        and c.inferred_type not in ["text", "datetime"]
     ]
 
     # Data volume check
@@ -135,7 +135,7 @@ def plan_analyses(
                     PlannedAnalysis(
                         name="RandomForestRegressor",
                         category="regression",
-                        description="Ensemble bagging with 100 decision trees",
+                        description="Ensemble bagging with 50 decision trees",
                     ),
                     PlannedAnalysis(
                         name="GradientBoostingRegressor",
@@ -178,7 +178,7 @@ def plan_analyses(
                     PlannedAnalysis(
                         name="RandomForestClassifier",
                         category="classification",
-                        description="Ensemble random forest with 100 trees",
+                        description="Ensemble random forest with 50 trees",
                     ),
                     PlannedAnalysis(
                         name="GradientBoostingClassifier",

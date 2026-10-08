@@ -1,117 +1,45 @@
 "use client";
-
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { SampleDatasetInfo, UploadResponse } from "@/lib/types";
-import { loadSampleDataset } from "@/lib/api";
-import { BarChart3, Database, Home, Loader2, TrendingUp, Users } from "lucide-react";
+import { errorMessage, fetchSamples, loadSampleDataset } from "@/lib/api";
+import { Database, Loader2 } from "lucide-react";
 
-interface SampleDatasetsProps {
-  onLoadSample: (res: UploadResponse) => void;
-}
-
-const SAMPLE_ICONS: Record<string, React.ElementType> = {
-  housing: Home,
-  customer_churn: Users,
-  student_performance: BarChart3,
-  retail_sales: TrendingUp,
-};
-
-export function SampleDatasets({ onLoadSample }: SampleDatasetsProps) {
+export function SampleDatasets({ onLoadSample }: { onLoadSample: (res: UploadResponse) => void }) {
+  const [samples, setSamples] = useState<SampleDatasetInfo[]>([]);
   const [loadingId, setLoadingId] = useState<string | null>(null);
-
-  const samples: SampleDatasetInfo[] = [
-    {
-      id: "housing",
-      name: "Housing Sales",
-      description: "250 properties with sqft, rooms, and price. Benchmarks 7 regression models.",
-      row_count: 250,
-      column_count: 11,
-      recommended_target: "price",
-      suggested_problem_type: "regression",
-    },
-    {
-      id: "customer_churn",
-      name: "Telecom Churn",
-      description: "300 subscriber accounts. Benchmarks binary classification, ROC-AUC, and imbalance.",
-      row_count: 300,
-      column_count: 10,
-      recommended_target: "churned",
-      suggested_problem_type: "binary_classification",
-    },
-    {
-      id: "student_performance",
-      name: "Student Scores",
-      description: "250 student study habits and exam tiers. Multiclass & continuous testing.",
-      row_count: 250,
-      column_count: 10,
-      recommended_target: "performance_tier",
-      suggested_problem_type: "multiclass_classification",
-    },
-    {
-      id: "retail_sales",
-      name: "Retail Store Sales",
-      description: "200 chronological records with seasonal holidays and fuel price indicators.",
-      row_count: 200,
-      column_count: 9,
-      recommended_target: "weekly_sales",
-      suggested_problem_type: "time_series",
-    },
-  ];
-
-  const handleSelect = async (sampleId: string) => {
-    setLoadingId(sampleId);
-    try {
-      const result = await loadSampleDataset(sampleId);
-      onLoadSample(result);
-    } catch (err: any) {
-      alert(err.message || "Failed to load sample dataset");
-    } finally {
-      setLoadingId(null);
-    }
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const reload = async () => {
+    setCatalogLoading(true); setError(null);
+    try { setSamples(await fetchSamples()); }
+    catch (e) { setError(errorMessage(e)); }
+    finally { setCatalogLoading(false); }
   };
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between text-xs text-slate-400">
-        <span className="font-medium text-slate-300">Or explore instantly with a pre-packaged benchmark:</span>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        {samples.map((s) => {
-          const Icon = SAMPLE_ICONS[s.id] || Database;
-          const isLoading = loadingId === s.id;
-
-          return (
-            <button
-              key={s.id}
-              onClick={() => handleSelect(s.id)}
-              disabled={loadingId !== null}
-              className="text-left bg-slate-900/60 hover:bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-xl p-4 transition-all duration-200 group flex flex-col justify-between"
-            >
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="p-2 bg-slate-800 rounded-lg text-slate-300 group-hover:text-blue-400 transition-colors">
-                    {isLoading ? <Loader2 className="w-4 h-4 animate-spin text-blue-400" /> : <Icon className="w-4 h-4" />}
-                  </div>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400">
-                    {s.suggested_problem_type.replace("_", " ")}
-                  </span>
-                </div>
-
-                <div>
-                  <h5 className="text-xs font-semibold text-slate-100 group-hover:text-white">{s.name}</h5>
-                  <p className="text-[11px] text-slate-400 mt-1 line-clamp-2 leading-relaxed">{s.description}</p>
-                </div>
-              </div>
-
-              <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-500">
-                <span>Target: <strong className="text-slate-400">{s.recommended_target}</strong></span>
-                <span className="text-blue-400 font-medium group-hover:underline">Launch &rarr;</span>
-              </div>
-            </button>
-          );
-        })}
-      </div>
+  useEffect(() => { let active = true;
+    fetchSamples().then(s => { if (active) setSamples(s); }).catch(e => { if (active) setError(errorMessage(e)); }).finally(() => { if (active) setCatalogLoading(false); });
+    return () => { active = false; };
+  }, []);
+  const select = async (id: string) => {
+    if (loadingId) return;
+    setLoadingId(id); setError(null);
+    try { onLoadSample(await loadSampleDataset(id)); }
+    catch (e) { setError(errorMessage(e)); }
+    finally { setLoadingId(null); }
+  };
+  return <div className="space-y-3">
+    <p className="text-sm font-medium text-slate-300">Explore with a synthetic sample dataset</p>
+    <p className="text-xs text-slate-400">Generated examples for learning and testing; these are not real-world benchmark datasets.</p>
+    {catalogLoading && <p role="status" className="flex items-center gap-2 text-xs text-slate-400"><Loader2 className="w-4 h-4 animate-spin" />Connecting to the analysis engine. A sleeping service may take a minute to start.</p>}
+    {error && <div role="alert" className="rounded-lg border border-rose-500/30 p-3 text-xs text-rose-300"><p>{error}</p><button onClick={reload} className="mt-2 px-3 py-2 rounded bg-slate-800 text-white" disabled={catalogLoading}>Retry sample catalog</button></div>}
+    {!catalogLoading && !error && samples.length === 0 && <p className="text-sm text-slate-400">No sample files are available. You can upload your own dataset.</p>}
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      {samples.map(s => <button key={s.id} onClick={() => select(s.id)} disabled={loadingId !== null} className="text-left rounded-xl bg-slate-900/60 border border-slate-800 p-4 hover:border-blue-500/50 disabled:opacity-60">
+        {loadingId === s.id ? <Loader2 className="w-5 h-5 text-blue-400 animate-spin" /> : <Database className="w-5 h-5 text-blue-400" />}
+        <h3 className="mt-3 text-sm font-semibold text-white">{s.name}</h3>
+        <p className="mt-2 text-xs text-slate-400">{s.description}</p>
+        <p className="mt-3 text-xs text-slate-400">{s.row_count} rows · {s.column_count} columns</p>
+        <p className="mt-1 text-xs text-blue-300">Target: {s.recommended_target}</p>
+      </button>)}
     </div>
-  );
+  </div>;
 }

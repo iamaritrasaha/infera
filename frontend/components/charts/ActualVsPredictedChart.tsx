@@ -15,6 +15,8 @@ interface ActualVsPredictedProps {
 export function ActualVsPredictedChart({ data, targetName }: ActualVsPredictedProps) {
   const [hoveredPoint, setHoveredPoint] = useState<ScatterPoint | null>(null);
 
+  data = (data || []).filter(p => Number.isFinite(p.actual) && Number.isFinite(p.predicted));
+
   if (!data || data.length === 0) {
     return <div className="text-sm text-slate-400 py-6 text-center">No prediction scatter points available.</div>;
   }
@@ -35,7 +37,7 @@ export function ActualVsPredictedChart({ data, targetName }: ActualVsPredictedPr
 
   return (
     <div className="bg-slate-900/60 border border-slate-800 rounded-lg p-4 flex flex-col items-center">
-      <div className="w-full flex items-center justify-between mb-2">
+      <div className="w-full flex flex-wrap items-center justify-between gap-2 mb-2">
         <h5 className="text-xs font-semibold text-slate-300">Predicted vs Actual ({targetName})</h5>
         {hoveredPoint && (
           <div className="text-[11px] font-mono text-blue-400">
@@ -44,8 +46,8 @@ export function ActualVsPredictedChart({ data, targetName }: ActualVsPredictedPr
         )}
       </div>
 
-      <div className="relative">
-        <svg width={size} height={size} className="overflow-visible">
+      <div className="relative w-full max-w-[280px]">
+        <svg viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Actual versus predicted values" className="w-full max-w-[260px] h-auto">
           {/* Grid lines */}
           <line
             x1={padding}

@@ -6,33 +6,34 @@ import { HistogramBin } from "@/lib/types";
 interface HistogramChartProps {
   column: string;
   bins: HistogramBin[];
-  mean?: number;
-  median?: number;
+  mean?: number | null;
+  median?: number | null;
 }
 
 export function HistogramChart({ column, bins, mean, median }: HistogramChartProps) {
   const [hoveredBin, setHoveredBin] = useState<HistogramBin | null>(null);
 
+  bins = (bins || []).filter(b => Number.isFinite(b.count) && b.count >= 0);
   if (!bins || bins.length === 0) {
     return <div className="text-sm text-slate-400 py-6 text-center">No histogram bins available.</div>;
   }
 
   const maxCount = Math.max(...bins.map((b) => b.count), 1);
-  const chartHeight = 160;
+
 
   return (
     <div className="w-full bg-slate-900/60 border border-slate-800 rounded-lg p-4">
-      <div className="flex items-center justify-between mb-3 text-xs text-slate-400">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3 text-xs text-slate-400">
         <div>
           <span className="font-medium text-slate-200">{column}</span> Distribution
         </div>
         <div className="flex items-center gap-3">
-          {mean !== undefined && (
+          {mean != null && (
             <span className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span> Mean: {mean.toLocaleString()}
             </span>
           )}
-          {median !== undefined && (
+          {median != null && (
             <span className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span> Median: {median.toLocaleString()}
             </span>
@@ -49,11 +50,16 @@ export function HistogramChart({ column, bins, mean, median }: HistogramChartPro
             <div
               key={idx}
               className="flex-1 h-full flex flex-col justify-end items-center group relative cursor-pointer"
+              tabIndex={0}
+              role="img"
+              aria-label={`${bin.label}: ${bin.count} observations`}
+              onFocus={() => setHoveredBin(bin)}
+              onBlur={() => setHoveredBin(null)}
               onMouseEnter={() => setHoveredBin(bin)}
               onMouseLeave={() => setHoveredBin(null)}
             >
               <div
-                style={{ height: `${Math.max(barHeightPct, 3)}%` }}
+                style={{ height: `${barHeightPct}%` }}
                 className={`w-full rounded-t transition-all duration-200 ${
                   isHovered ? "bg-blue-400 shadow-lg shadow-blue-500/20" : "bg-blue-600/75 hover:bg-blue-500/90"
                 }`}
@@ -63,7 +69,7 @@ export function HistogramChart({ column, bins, mean, median }: HistogramChartPro
         })}
       </div>
 
-      <div className="flex justify-between items-center mt-2 text-[11px] text-slate-400">
+      <div className="flex flex-wrap gap-2 justify-between items-center mt-2 text-[11px] text-slate-400">
         <span>{bins[0]?.bin_start}</span>
         <span className="text-slate-300 font-mono">
           {hoveredBin ? (

@@ -43,15 +43,15 @@ export function StatisticsTab({ data }: StatisticsTabProps) {
                 <tr key={i} className="hover:bg-slate-800/30 transition-colors">
                   <td className="py-2.5 px-3 font-medium font-sans text-slate-200">{d.column}</td>
                   <td className="py-2.5 px-3 text-right text-slate-400">{d.count}</td>
-                  <td className="py-2.5 px-3 text-right text-slate-200 font-semibold">{d.mean.toLocaleString()}</td>
-                  <td className="py-2.5 px-3 text-right text-slate-300">{d.std.toLocaleString()}</td>
+                  <td className="py-2.5 px-3 text-right text-slate-200 font-semibold">{d.mean?.toLocaleString() ?? "Unavailable"}</td>
+                  <td className="py-2.5 px-3 text-right text-slate-300">{d.std?.toLocaleString() ?? "Unavailable"}</td>
                   <td className="py-2.5 px-3 text-right text-slate-400">{d.min.toLocaleString()}</td>
                   <td className="py-2.5 px-3 text-right text-slate-400">{d.q25.toLocaleString()}</td>
-                  <td className="py-2.5 px-3 text-right text-blue-400 font-semibold">{d.median.toLocaleString()}</td>
+                  <td className="py-2.5 px-3 text-right text-blue-400 font-semibold">{d.median?.toLocaleString() ?? "Unavailable"}</td>
                   <td className="py-2.5 px-3 text-right text-slate-400">{d.q75.toLocaleString()}</td>
                   <td className="py-2.5 px-3 text-right text-slate-400">{d.max.toLocaleString()}</td>
-                  <td className="py-2.5 px-3 text-right text-slate-300">{d.skewness}</td>
-                  <td className="py-2.5 px-3 text-right text-slate-300">{d.kurtosis}</td>
+                  <td className="py-2.5 px-3 text-right text-slate-300">{d.skewness ?? "Unavailable"}</td>
+                  <td className="py-2.5 px-3 text-right text-slate-300">{d.kurtosis ?? "Unavailable"}</td>
                 </tr>
               ))}
             </tbody>
@@ -89,7 +89,7 @@ export function StatisticsTab({ data }: StatisticsTabProps) {
                 >
                   <div>
                     {/* Header: Test Name & Decision */}
-                    <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="flex flex-col xl:flex-row items-start justify-between gap-2 mb-2">
                       <div>
                         <h4 className="text-xs font-bold text-white tracking-wide">{test.test_name}</h4>
                         <span className="text-[11px] text-slate-400 font-mono">
@@ -126,7 +126,7 @@ export function StatisticsTab({ data }: StatisticsTabProps) {
                     </div>
 
                     {/* Numbers: Test stat, p-value */}
-                    <div className="flex items-center gap-4 text-xs font-mono py-1">
+                    <div className="flex flex-wrap items-center gap-4 text-xs font-mono py-1">
                       <span className="text-slate-300">
                         {test.statistic_name}: <strong className="text-white">{test.statistic_value}</strong>
                       </span>

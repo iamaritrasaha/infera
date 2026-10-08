@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.routes import analysis, health, results, samples, upload
 from app.core.config import settings
+from app.core.limits import UploadLimitMiddleware
 from app.core.logging import logger
 
 
@@ -32,14 +33,27 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # CORS configuration
+    app.add_middleware(UploadLimitMiddleware)
+    # CORS wraps upload rejection responses as well.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Content-Type", "X-Infera-Session"],
+        expose_headers=["Content-Disposition", "Retry-After"],
     )
+
+    # Private results must not be shared through browser or intermediary caches.
+    @app.middleware("http")
+    async def private_response_headers(request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            if request.headers.get("X-Infera-Session"):
+                response.headers["Vary"] = ", ".join(filter(None, [response.headers.get("Vary"), "X-Infera-Session"]))
+        return response
 
     # Register API Routers
     app.include_router(health.router)
@@ -51,7 +65,7 @@ def create_app() -> FastAPI:
     # Human-friendly global exception handling
     @app.exception_handler(ValueError)
     async def value_error_handler(request: Request, exc: ValueError):
-        logger.warning(f"Validation error on {request.url.path}: {exc!s}")
+        logger.warning("Validation error on %s", request.url.path)
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={"detail": str(exc)},
@@ -59,7 +73,7 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
-        logger.error(f"Internal error processing {request.url.path}: {exc!s}", exc_info=True)
+        logger.error("Internal error on %s (%s)", request.url.path, type(exc).__name__)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
@@ -67,7 +81,6 @@ def create_app() -> FastAPI:
                     "Infera encountered an error processing your request. "
                     "You can still inspect the dataset schema, data quality, and distributions."
                 ),
-                "error_type": exc.__class__.__name__,
             },
         )
 

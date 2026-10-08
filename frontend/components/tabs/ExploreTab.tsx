@@ -38,6 +38,7 @@ export function ExploreTab({ data }: ExploreTabProps) {
               <p className="text-xs text-slate-400">Histogram partitions and empirical skewness / kurtosis metrics</p>
             </div>
             <select
+              aria-label="Numerical feature"
               value={selectedNumCol}
               onChange={(e) => setSelectedNumCol(e.target.value)}
               className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-blue-500 font-medium"
@@ -67,14 +68,14 @@ export function ExploreTab({ data }: ExploreTabProps) {
               </h5>
 
               <div className="grid grid-cols-2 gap-2 text-slate-400">
-                <div>Mean: <strong className="text-slate-200 font-mono">{currentNum.mean}</strong></div>
-                <div>Median: <strong className="text-slate-200 font-mono">{currentNum.median}</strong></div>
-                <div>Std Dev: <strong className="text-slate-200 font-mono">{currentNum.std}</strong></div>
+                <div>Mean: <strong className="text-slate-200 font-mono">{currentNum.mean ?? "Unavailable"}</strong></div>
+                <div>Median: <strong className="text-slate-200 font-mono">{currentNum.median ?? "Unavailable"}</strong></div>
+                <div>Std Dev: <strong className="text-slate-200 font-mono">{currentNum.std ?? "Unavailable"}</strong></div>
                 <div>IQR: <strong className="text-slate-200 font-mono">{currentNum.iqr}</strong></div>
                 <div>Min: <strong className="text-slate-200 font-mono">{currentNum.min}</strong></div>
                 <div>Max: <strong className="text-slate-200 font-mono">{currentNum.max}</strong></div>
-                <div>Skewness: <strong className="text-slate-200 font-mono">{currentNum.skewness}</strong></div>
-                <div>Kurtosis: <strong className="text-slate-200 font-mono">{currentNum.kurtosis}</strong></div>
+                <div>Skewness: <strong className="text-slate-200 font-mono">{currentNum.skewness ?? "Unavailable"}</strong></div>
+                <div>Kurtosis: <strong className="text-slate-200 font-mono">{currentNum.kurtosis ?? "Unavailable"}</strong></div>
               </div>
 
               <div className="pt-2 border-t border-slate-800/80 space-y-2">
@@ -103,6 +104,7 @@ export function ExploreTab({ data }: ExploreTabProps) {
               <p className="text-xs text-slate-400">Class proportions, distinct levels, and modal categories</p>
             </div>
             <select
+              aria-label="Categorical feature"
               value={selectedCatCol}
               onChange={(e) => setSelectedCatCol(e.target.value)}
               className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-purple-500 font-medium"
@@ -124,7 +126,7 @@ export function ExploreTab({ data }: ExploreTabProps) {
                   </div>
                   <div className="flex-1 h-5 bg-slate-800/80 rounded overflow-hidden flex items-center">
                     <div
-                      style={{ width: `${Math.max(freq.percentage, 2)}%` }}
+                      style={{ width: `${freq.percentage}%` }}
                       className="h-full bg-purple-600/80 rounded transition-all duration-300"
                     />
                   </div>

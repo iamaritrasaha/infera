@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,14 +27,18 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str] | str = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "https://infera.vercel.app",
-        "*",
+        "https://infera-omega.vercel.app",
     ]
 
     # Free-tier constraints & limits
-    MAX_UPLOAD_SIZE_BYTES: int = 15 * 1024 * 1024  # 15 MB
-    MAX_ROW_COUNT: int = 50_000
-    MAX_COLUMN_COUNT: int = 100
+    MAX_UPLOAD_SIZE_BYTES: int = Field(15 * 1024 * 1024, gt=0)
+    MAX_ROW_COUNT: int = Field(50_000, gt=0)
+    MAX_COLUMN_COUNT: int = Field(100, gt=0)
+    MAX_DATASET_MEMORY_BYTES: int = Field(32 * 1024 * 1024, gt=0)
+    MAX_CACHE_MEMORY_BYTES: int = Field(64 * 1024 * 1024, gt=0)
+    MAX_ENCODED_MEMORY_BYTES: int = Field(32 * 1024 * 1024, gt=0)
+    MAX_MODEL_ROWS: int = Field(5000, ge=100)
+    MAX_CLUSTER_ROWS: int = Field(1500, ge=100)
     ALLOWED_EXTENSIONS: list[str] | str = ["csv", "xlsx", "json", "parquet"]
 
     @field_validator("CORS_ORIGINS", "ALLOWED_EXTENSIONS")
@@ -72,12 +76,12 @@ class Settings(BaseSettings):
         return v
 
     # Temporary dataset cache TTL in seconds (in-memory LRU)
-    DATASET_CACHE_TTL_SECONDS: int = 3600
-    MAX_CACHED_DATASETS: int = 20
+    DATASET_CACHE_TTL_SECONDS: int = Field(3600, gt=0)
+    MAX_CACHED_DATASETS: int = Field(20, gt=0)
 
     # Concurrency and rate protection on free tier
-    MAX_CONCURRENT_ANALYSES: int = 1
-    ANALYSIS_SEMAPHORE_TIMEOUT_SECONDS: float = 10.0
+    MAX_CONCURRENT_ANALYSES: int = Field(1, gt=0)
+    ANALYSIS_SEMAPHORE_TIMEOUT_SECONDS: float = Field(10.0, gt=0)
 
 
 settings = Settings()

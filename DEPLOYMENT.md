@@ -1,189 +1,125 @@
-# Infera v0.1.0 — Production Deployment Guide
+# Infera deployment guide
 
-> **Zero-Budget Architecture:** FastAPI Backend on **Render Free** + Next.js Frontend on **Vercel Hobby**. Total cost: **₹0 / $0**.
+Infera uses a separate Python/FastAPI backend and Next.js frontend. No paid APIs, persistent database, or paid hosting plan is required for this configuration. Free platform quotas and cold starts still apply.
 
----
+## Verified state on 9 October 2026
 
-## Architecture Overview
+- Repository: [iamaritrasaha/infera](https://github.com/iamaritrasaha/infera).
+- Frontend: [infera-omega.vercel.app](https://infera-omega.vercel.app), existing deployment READY at original commit `4806303`. Authenticated inspection returned HTTP 200. Public access is protected by Vercel Authentication.
+- Original deployment logs showed a successful Next.js build and exclusion of Python backend files. The current failure is missing backend infrastructure/configuration, not evidence that Python was packaged by this deployment.
+- Vercel environment inspection returned no variables, including no `NEXT_PUBLIC_API_URL`.
+- The creator confirmed Render is **not deployed**. No backend public URL has been verified.
+- Vercel settings were updated to Next.js, `frontend` root, `npm run build` (runs `next build`), `npm install`, framework-default output directory, and no source files outside the root. The platform accepted the update; the next deployment still needs log and HTTP verification.
+- Local audit changes have not automatically become the live site. See [AUDIT.md](AUDIT.md) for validation and commit status.
+
+## 1. Create the backend on Render Free
+
+Use [Render Dashboard](https://dashboard.render.com) > New > Blueprint, connect this repository, and select the branch containing the validated changes. Review `render.yaml`, ensure the instance plan is **Free**, and apply it.
+
+For a manual Web Service use these same settings:
+
+| Setting | Value |
+| --- | --- |
+| Runtime | Python |
+| Root Directory | Leave empty, so `sample_data/` remains available |
+| Build command | `cd backend && pip install -r requirements.txt && pip install --no-deps .` |
+| Start command | `cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1` |
+| Health check | `/health` |
+| Python version | `3.12.3` as audited; retest before changing |
+| Instance | Free |
+
+The root directory matters: the sample catalog reads the repository's `sample_data/` directory. Do not restrict the service checkout to `backend/`. Render supplies `PORT`; do not override it with a fixed local port.
+
+Use the environment settings in `render.yaml`. In particular:
 
 ```text
-       Browser / Client
-        ┌─────────────┐
-        │ Next.js App │  (Deployed on Vercel Hobby)
-        └──────┬──────┘
-               │ HTTPS (NEXT_PUBLIC_API_URL)
-               ▼
-        ┌─────────────┐
-        │ FastAPI API │  (Deployed on Render Free)
-        └──────┬──────┘
-               │ In-Memory Processing & Modeling
-        ┌──────┴──────┐
-        │ SciPy Engine│  (Zero external AI APIs, 512MB RAM safe)
-        └─────────────┘
+CORS_ORIGINS=["https://infera-omega.vercel.app"]
+MAX_CONCURRENT_ANALYSES=1
+OMP_NUM_THREADS=1
+OPENBLAS_NUM_THREADS=1
+MKL_NUM_THREADS=1
+MAX_MODEL_ROWS=5000
+MAX_CLUSTER_ROWS=1500
 ```
 
----
+Copy the **actual public service origin shown by Render** once it exists. No example hostname in this repository proves that a service exists. Inspect build/runtime logs and verify `/health` before configuring the frontend. Avoid logging uploaded data or session tokens.
 
-## Part 1: Backend Deployment (Render Free)
+## 2. Configure Vercel Hobby
 
-Render Free provides 512 MB RAM and 0.1 shared vCPU with HTTPS termination and automatic SSL certificates.
+Open the existing `infera` project rather than creating another project. Set:
 
-### Method A: Blueprint Deployment (Recommended)
+| Setting | Value |
+| --- | --- |
+| Framework preset | Next.js |
+| Root Directory | `frontend` |
+| Include source files outside root | Off |
+| Install command | `npm install` |
+| Build command | `npm run build`, which runs `next build` |
+| Output Directory | Framework default, leave override empty |
+| Node.js | 24.x |
 
-1. Push your repository to **GitHub**.
-2. Log into the [Render Dashboard](https://dashboard.render.com).
-3. Click **New** → **Blueprint**.
-4. Connect your GitHub repository.
-5. Render will detect [`render.yaml`](./render.yaml) at the repository root and automatically populate:
-   - **Service Name**: `infera-backend`
-   - **Runtime**: Python 3.12
-   - **Build Command**: `cd backend && pip install --upgrade pip && pip install .`
-   - **Start Command**: `cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-   - **Health Check Path**: `/health`
-6. Click **Apply**.
-7. Note your public backend URL (e.g. `https://infera-backend.onrender.com`).
+The root `.vercelignore` excludes `backend/`, `sample_data/`, `render.yaml`, and Docker Compose. There is no Vercel Services configuration. The `services` key in `render.yaml` is Render's Blueprint syntax and is unrelated to the Vercel framework preset.
 
----
+Add `NEXT_PUBLIC_API_URL` to Production and any Preview environments you intend to test. Its value must be the actual Render **HTTPS origin**, without `/api`, credentials, queries, or fragments. A trailing slash is normalized. This is a public variable; never put credentials in it.
 
-### Method B: Manual Web Service Setup
+Redeploy the validated Git commit after setting the variable. Next.js embeds it during the build; changing a runtime variable alone does not repair an existing bundle. Read deployment logs and confirm no Python build or scientific dependencies appear.
 
-If setting up without the Blueprint:
+Production currently requires Vercel Authentication. If the site is meant to be publicly accessible, review Project Settings > Deployment Protection and choose the intended access policy. The audit did not silently disable that account setting.
 
-1. Click **New** → **Web Service** in Render.
-2. Connect your repository.
-3. Configure settings:
-   - **Name**: `infera-backend`
-   - **Region**: Oregon (or nearest to your audience)
-   - **Branch**: `main`
-   - **Root Directory**: `backend`
-   - **Runtime**: `Python 3`
-   - **Build Command**: `pip install --upgrade pip && pip install .`
-   - **Start Command**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-   - **Instance Type**: `Free`
-4. Expand **Advanced Settings**:
-   - **Health Check Path**: `/health`
-5. Under **Environment Variables**, add:
-   | Key | Value | Description |
-   | :--- | :--- | :--- |
-   | `PYTHON_VERSION` | `3.12.3` | Python runtime version |
-   | `PORT` | `8000` | Fallback port (Render injects `$PORT` dynamically) |
-   | `HOST` | `0.0.0.0` | Binds to all network interfaces |
-   | `CORS_ORIGINS` | `https://<your-vercel-app>.vercel.app,http://localhost:3000` | Allowed origins |
-   | `MAX_UPLOAD_SIZE_BYTES` | `15728640` | 15 MB file size limit |
-   | `MAX_ROW_COUNT` | `50000` | Row ingestion limit |
-   | `MAX_COLUMN_COUNT` | `100` | Column limit |
-   | `MAX_CONCURRENT_ANALYSES`| `1` | Enforces 1 heavy analysis at a time to prevent OOM |
-   | `ANALYSIS_SEMAPHORE_TIMEOUT_SECONDS` | `10` | Queue wait time before returning HTTP 429 |
-   | `DATASET_CACHE_TTL_SECONDS` | `3600` | In-memory session lifetime (1 hour) |
-   | `MAX_CACHED_DATASETS` | `20` | In-memory LRU session capacity |
-6. Click **Create Web Service**.
+For a preview domain, add that exact origin to Render's `CORS_ORIGINS` only if it should access datasets. Avoid a wildcard. Production needs only the deployed production origin; local development origins can be configured separately.
 
----
+## 3. Verify the actual deployment
 
-## Part 2: Frontend Deployment (Vercel Hobby)
+Set the copied service origin locally in a task-specific shell variable:
 
-Vercel Hobby provides unlimited preview deployments and high-performance Edge routing for Next.js.
-
-1. Log into the [Vercel Dashboard](https://vercel.com).
-2. Click **Add New** → **Project**.
-3. Import your GitHub repository.
-4. Configure Project Settings:
-   - **Framework Preset**: `Next.js`
-   - **Root Directory**: Click *Edit* and select `frontend`.
-5. Under **Environment Variables**, add:
-   | Key | Value | Description |
-   | :--- | :--- | :--- |
-   | `NEXT_PUBLIC_API_URL` | `https://infera-backend.onrender.com` | **No trailing slash**. URL of your Render backend. |
-6. Click **Deploy**.
-7. Vercel will run `npm run build` using Next.js Turbopack and deploy in ~45 seconds.
-8. Once deployed, copy your production Vercel domain (e.g. `https://infera.vercel.app`).
-9. **Important**: Go back to your Render Dashboard → `infera-backend` → **Environment Variables**, update `CORS_ORIGINS` to include your exact Vercel URL, and trigger a quick redeploy.
-
----
-
-## Part 3: Environment Variable Matrix
-
-| Variable | Service | Required | Default | Description |
-| :--- | :--- | :---: | :--- | :--- |
-| `NEXT_PUBLIC_API_URL` | Frontend | **Yes** | `http://localhost:8000` | Base URL of FastAPI backend. Must NOT have a trailing slash. |
-| `PORT` | Backend | Auto | `8000` | Injected dynamically by Render. Backend reads this to bind port. |
-| `HOST` | Backend | No | `0.0.0.0` | IP interface binding. Must be `0.0.0.0` in container environments. |
-| `CORS_ORIGINS` | Backend | **Yes** | `*` | Comma-separated or JSON array of allowed origins for browser security. |
-| `MAX_UPLOAD_SIZE_BYTES` | Backend | No | `15728640` | File upload ceiling (15 MB default). Prevents bandwidth & disk abuse. |
-| `MAX_ROW_COUNT` | Backend | No | `50000` | Row count ceiling. Rejects oversized tables that would crash memory. |
-| `MAX_COLUMN_COUNT` | Backend | No | `100` | Maximum column count to protect $O(M^2)$ correlation matrix footprint. |
-| `MAX_CONCURRENT_ANALYSES`| Backend | No | `1` | Max concurrent heavy scikit-learn runs. Keep at 1 on 512 MB RAM. |
-| `ANALYSIS_SEMAPHORE_TIMEOUT_SECONDS` | Backend | No | `10.0` | Maximum wait queue time before returning HTTP 429. |
-| `DATASET_CACHE_TTL_SECONDS` | Backend | No | `3600` | In-memory session eviction timer (1 hour). |
-| `MAX_CACHED_DATASETS` | Backend | No | `20` | In-memory LRU session capacity limit. |
-
----
-
-## Part 4: Production Smoke-Test Checklist
-
-Run through this checklist after deploying to verify system integrity:
-
-```markdown
-- [ ] 1. Health Probe
-      curl -s https://<your-backend>.onrender.com/health
-      Expect: {"status": "ok", "project": "Infera", "version": "0.1.0"}
-
-- [ ] 2. CORS Preflight Check
-      curl -I -X OPTIONS https://<your-backend>.onrender.com/api/samples \
-        -H "Origin: https://<your-frontend>.vercel.app" \
-        -H "Access-Control-Request-Method: GET"
-      Expect: HTTP 200 with access-control-allow-origin header.
-
-- [ ] 3. Sample Dataset Catalog
-      Open frontend in browser. Verify sample cards appear on Landing & Dashboard.
-      Click "Telecom Customer Churn" -> confirm instant profiling loads.
-
-- [ ] 4. File Upload (CSV, JSON, XLSX, Parquet)
-      Drag and drop a valid CSV dataset. Verify column overview table,
-      missing values, and initial health score render immediately.
-
-- [ ] 5. Oversized & Corrupted Upload Handling
-      - Upload empty 0-byte file -> Expect: Clear error modal ("file is empty").
-      - Upload invalid binary file -> Expect: Clear error modal ("unable to parse").
-      - Upload file with >50,000 rows -> Expect: Graceful limit notice.
-
-- [ ] 6. Statistical Analysis & Distributions
-      Inspect "Explore" and "Statistics" tabs. Verify histograms, skewness,
-      excess kurtosis, and correlation matrices display with p-values.
-
-- [ ] 7. Supervised Modeling & Cross-Validation
-      Click "Run Full Analysis":
-      - Regression (e.g. Housing Prices): Verify all 7 models benchmarked with R²,
-        RMSE, MAE, feature importances, and residual scatter plots.
-      - Classification (e.g. Telecom Churn): Verify all 4 models benchmarked with F1,
-        Accuracy, ROC-AUC, and Confusion Matrix.
-
-- [ ] 8. Report Export & Download
-      - Click "Export Evidence Report" -> download Markdown (.md).
-      - Download Standalone HTML (.html) -> open in browser, verify clean CSS styling
-        and absence of script execution (XSS-safe).
-
-- [ ] 9. Concurrency & Rate Limiting
-      Simultaneously trigger two analysis jobs in separate browser tabs.
-      Verify the second job either waits smoothly or receives a polite HTTP 429
-      notice without crashing the backend service.
+```bash
+INFERA_API_ORIGIN='paste-the-actual-https-origin-here'
+curl --fail --max-time 90 "$INFERA_API_ORIGIN/health"
+curl --fail --max-time 90 "$INFERA_API_ORIGIN/api/samples"
+curl --include --request OPTIONS "$INFERA_API_ORIGIN/api/upload" \
+  --header 'Origin: https://infera-omega.vercel.app' \
+  --header 'Access-Control-Request-Method: POST' \
+  --header 'Access-Control-Request-Headers: content-type,x-infera-session'
 ```
 
----
+Health must return `status: ok`, `project: Infera`, and a version. The preflight must allow the exact frontend origin and session header. An unapproved origin must not receive an allow-origin header. HTTP success alone does not verify analysis.
 
-## Part 5: Free-Tier Limitations & Operational Playbook
+In the real browser:
 
-Be transparent with users regarding free-tier operational parameters:
+1. Open the dashboard and check the Network/Console panels. Confirm requests go to the copied Render origin and no private data appears in URLs.
+2. Select Housing Prices, verify the recommended `price` target, run analysis, and visit every tab. Inspect R²/MAE/RMSE and baseline comparison.
+3. Run customer churn and student performance. Inspect macro precision/recall/F1, ROC-AUC when applicable, confusion matrices, and imbalance warnings.
+4. Run retail sales and inspect the time-series chart and the stated ADF limitations.
+5. Upload a real CSV, test drag-and-drop, test empty/unsupported/oversized uploads, and confirm retry works.
+6. Expand evidence, download Markdown and HTML, and verify all reported values agree with the dashboard.
+7. Open an independent browser session. Its token must not be able to read the first session's dataset/results/reports even when the dataset ID is known.
+8. Check 375/768/1366/1920 px widths, keyboard access, loading states, and charts. Allow internal tables/tab bars to scroll, without whole-page horizontal overflow.
+9. Wait for a cold start or server restart, retry, and verify unavailable/expired results are explained accurately.
 
-1. **Inactivity Sleep Cycle**:
-   - Render spins down free web services after **15 minutes** of inactivity.
-   - When a user visits the frontend after idle, the first request wakes the backend, which takes **30 to 50 seconds**.
-   - The Infera frontend includes automated wake detection and informs the user while the server starts up.
-2. **In-Memory Transience**:
-   - Infera intentionally operates with **zero persistent database storage** (ensuring ₹0 cost and complete data privacy).
-   - Datasets exist only in memory during active sessions (1-hour TTL).
-   - If the Render free container restarts or sleeps, existing session tokens are cleared. Users simply re-upload their dataset.
-3. **Hardware Boundaries**:
-   - RAM: **512 MB** total.
-   - CPU: **0.1 shared vCPU**.
-   - Infera enforces `MAX_CONCURRENT_ANALYSES=1`, `max_categories=20` on one-hot encodings, and `n_estimators=50` on tree ensembles to remain reliably within these boundaries.
+If Render cannot start, record the exact deployment error and keep production analysis marked unverified. If Vercel succeeds while Render is absent, only the frontend has deployed.
+
+## Configuration and free-tier limits
+
+Backend settings accept comma-separated or JSON-array CORS origins. `backend/.env.example` and `app/core/config.py` list upload, dimensional, decoded-memory, cache, encoding, model, and clustering limits. Do not raise them on a free instance without measuring memory and runtime.
+
+Render Free can sleep after inactivity and restart without retaining datasets. A cold start may take around a minute; the UI explains that the engine may be starting or unavailable and provides a safe retry. Caches are temporary, bounded, and process-local. Use one Uvicorn worker, because multiple workers would not share sessions or result caches.
+
+Vercel and Render free service terms/quotas apply. These limits reduce resource use but cannot guarantee an entire scientific Python process stays within the free instance's memory allowance. No production load test has been run while Render remains absent. [Render free-service documentation](https://render.com/docs/free) describes current platform limits.
+
+## Docker
+
+From the repository root:
+
+```bash
+docker compose up --build
+```
+
+The compose file bakes `http://localhost:8000` into the frontend for a local browser. The Docker service hostname `backend` is not a browser-reachable API origin. Use the external origin when hosting elsewhere, and rebuild after changing it. Do not copy `.env` secrets into an image.
+
+Docker execution was unavailable on the audit machine because Docker was not installed. Container files were reviewed; a successful container build/run remains a separate verification step.
+
+## Existing icon on GitHub
+
+The repository README displays `assets/infera-icon.svg`, the same existing mark used by the app. `assets/infera-social-preview.png` (1280 × 640, the unchanged icon centered on the existing dark background) is available for Repository Settings > General > Social preview > Edit > Upload an image. GitHub repositories have no independently configurable avatar like a user account. The available browser reached GitHub’s signed-out 404 page for repository settings, so the social preview upload is pending. [GitHub’s documented upload steps](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/customizing-your-repositorys-social-media-preview) require repository settings access; this is separate from committing the README asset. No personal GitHub avatar should be replaced as part of this task.
+
+Created and maintained by Aritra Saha.

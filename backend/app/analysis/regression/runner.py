@@ -26,8 +26,8 @@ class RegressionModelResult:
     mae_test: float
     mse_test: float
     rmse_test: float
-    cv_r2_mean: float
-    cv_r2_std: float
+    cv_r2_mean: float | None
+    cv_r2_std: float | None
     is_best_model: bool
     feature_importances: list[dict[str, float | str]]
     # Subsampled points for visualization (up to 80 points)
@@ -46,6 +46,10 @@ class RegressionComparison:
     best_model_name: str
     summary_table: list[dict[str, str | float]]
     insight: str
+    preparation: dict
+    cv_folds: int
+    selection_method: str
+    failed_models: list[str]
 
 
 def train_and_evaluate_regression(dataset: PreprocessedDataset) -> RegressionComparison:
@@ -95,6 +99,7 @@ def train_and_evaluate_regression(dataset: PreprocessedDataset) -> RegressionCom
     else:
         cv = None
 
+    failed_models: list[str] = []
     results: list[RegressionModelResult] = []
 
     for key, name, model in models_to_run:
@@ -115,17 +120,19 @@ def train_and_evaluate_regression(dataset: PreprocessedDataset) -> RegressionCom
             ):
                 try:
                     cv_pipeline = Pipeline(
-                        [("preprocessor", clone(dataset.preprocessor)), ("model", model)]
+                        [("preprocessor", clone(dataset.preprocessor)), ("model", clone(model))]
                     )
                     cv_scores = cross_val_score(
-                        cv_pipeline, dataset.x_train_raw, y_tr, cv=cv, scoring="r2"
+                        cv_pipeline, dataset.x_train_raw, y_tr, cv=cv, scoring="r2", error_score="raise"
                     )
+                    if not np.isfinite(cv_scores).all():
+                        raise ValueError("CV score unavailable")
                     cv_mean = float(np.mean(cv_scores))
                     cv_std = float(np.std(cv_scores))
                 except Exception:
-                    cv_mean, cv_std = r2, 0.0
+                    cv_mean, cv_std = None, None
             else:
-                cv_mean, cv_std = r2, 0.0
+                cv_mean, cv_std = None, None
 
             # Feature importances or linear weights
             importances: list[dict[str, float | str]] = []
@@ -155,7 +162,7 @@ def train_and_evaluate_regression(dataset: PreprocessedDataset) -> RegressionCom
                     )
 
             # Subsampled actual vs predicted & residuals (max 80 points for fast UI render)
-            sub_step = max(1, len(y_te) // 80)
+            sub_step = max(1, int(np.ceil(len(y_te) / 80)))
             pv_act: list[dict[str, float]] = []
             res_list: list[dict[str, float]] = []
             for i in range(0, len(y_te), sub_step):
@@ -173,8 +180,8 @@ def train_and_evaluate_regression(dataset: PreprocessedDataset) -> RegressionCom
                     mae_test=round(mae, 4),
                     mse_test=round(mse, 4),
                     rmse_test=round(rmse, 4),
-                    cv_r2_mean=round(cv_mean, 4),
-                    cv_r2_std=round(cv_std, 4),
+                    cv_r2_mean=round(cv_mean, 4) if cv_mean is not None else None,
+                    cv_r2_std=round(cv_std, 4) if cv_std is not None else None,
                     is_best_model=False,
                     feature_importances=importances,
                     predictions_vs_actual=pv_act,
@@ -182,17 +189,15 @@ def train_and_evaluate_regression(dataset: PreprocessedDataset) -> RegressionCom
                 )
             )
         except Exception:
-            # Handle numerical instability gracefully
+            failed_models.append(name)
             continue
 
     if not results:
         raise ValueError("All regression models encountered mathematical fitting errors.")
 
-    # Determine best model based on held-out test R2 (excluding dummy)
-    valid_candidates = [r for r in results if r.model_name != "dummy"]
-    best_candidate = (
-        max(valid_candidates, key=lambda x: x.r2_test) if valid_candidates else results[0]
-    )
+    cv_candidates = [r for r in results if r.cv_r2_mean is not None]
+    best_candidate = max(cv_candidates, key=lambda r: r.cv_r2_mean) if cv_candidates else max(results, key=lambda r: r.r2_test)
+    selection_method = "Training cross-validation R²" if cv_candidates else "Holdout R² (CV unavailable; selection may be optimistic)"
 
     for r in results:
         if r.model_name == best_candidate.model_name:
@@ -207,25 +212,19 @@ def train_and_evaluate_regression(dataset: PreprocessedDataset) -> RegressionCom
                 "r2": r.r2_test,
                 "rmse": r.rmse_test,
                 "mae": r.mae_test,
-                "cv_r2": f"{r.cv_r2_mean:.3f} ± {r.cv_r2_std:.3f}",
+                "cv_r2": f"{r.cv_r2_mean:.3f} ± {r.cv_r2_std:.3f}" if r.cv_r2_mean is not None else "Unavailable",
                 "is_best": r.is_best_model,
             }
         )
 
-    # Summary insight
-    diff_dummy = best_candidate.r2_test - results[0].r2_test
-    if best_candidate.r2_test <= 0:
-        insight = (
-            f"No candidate model exceeded the baseline mean predictor on held-out test data "
-            f"(best model '{best_candidate.display_name}' test R² = {best_candidate.r2_test:.3f}, RMSE = {best_candidate.rmse_test:.2f}). "
-            "The target column exhibits high residual noise or non-linear dynamics not captured by linear/tree specifications."
-        )
-    else:
-        insight = (
-            f"'{best_candidate.display_name}' achieved superior predictive performance on held-out test data "
-            f"with R² = {best_candidate.r2_test:.3f} and RMSE = {best_candidate.rmse_test:.2f}, "
-            f"surpassing baseline by +{diff_dummy:.3f} R² variance explained."
-        )
+    baseline = next((r for r in results if r.model_name == "dummy"), None)
+    delta = best_candidate.r2_test - baseline.r2_test if baseline else None
+    insight = (
+        f"'{best_candidate.display_name}' selected by {selection_method}. "
+        f"Holdout R² = {best_candidate.r2_test:.3f}, MAE = {best_candidate.mae_test:.2f}, RMSE = {best_candidate.rmse_test:.2f}. "
+        + (f"Difference from the median baseline: {delta:+.3f} R². " if delta is not None else "Baseline unavailable. ")
+        + "These estimates describe this split, not proven performance on new datasets."
+    )
 
     return RegressionComparison(
         target_column=dataset.target_name,
@@ -235,4 +234,8 @@ def train_and_evaluate_regression(dataset: PreprocessedDataset) -> RegressionCom
         best_model_name=best_candidate.display_name,
         summary_table=summary_table,
         insight=insight,
+        preparation=dataset.preparation,
+        cv_folds=cv.n_splits if cv is not None else 0,
+        selection_method=selection_method,
+        failed_models=failed_models,
     )

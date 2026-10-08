@@ -33,9 +33,9 @@ class NumericalDistribution:
     q25: float
     q75: float
     iqr: float
-    skewness: float
+    skewness: float | None
     skewness_interpretation: str
-    kurtosis: float
+    kurtosis: float | None
     kurtosis_interpretation: str
     histogram: list[HistogramBin]
 
@@ -106,8 +106,8 @@ def analyze_numerical_distribution(
     count = len(clean)
     mean_val = float(clean.mean())
     median_val = float(clean.median())
-    std_val = float(clean.std(ddof=1)) if count > 1 else 0.0
-    var_val = float(clean.var(ddof=1)) if count > 1 else 0.0
+    std_val = float(clean.std(ddof=1)) if count > 1 else float("nan")
+    var_val = float(clean.var(ddof=1)) if count > 1 else float("nan")
     min_val = float(clean.min())
     max_val = float(clean.max())
     q25 = float(clean.quantile(0.25))
@@ -115,8 +115,8 @@ def analyze_numerical_distribution(
     iqr = q75 - q25
 
     # Skewness and excess kurtosis using scipy
-    skew_val = float(stats.skew(clean, bias=False)) if count >= 3 and std_val > 0 else 0.0
-    kurt_val = float(stats.kurtosis(clean, bias=False)) if count >= 4 and std_val > 0 else 0.0
+    skew_val = float(stats.skew(clean, bias=False)) if count >= 3 and std_val > 0 else float("nan")
+    kurt_val = float(stats.kurtosis(clean, bias=False)) if count >= 4 and std_val > 0 else float("nan")
 
     # Build histogram bins
     bins_list: list[HistogramBin] = []

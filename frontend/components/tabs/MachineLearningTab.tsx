@@ -1,26 +1,14 @@
 "use client";
 
 import React, { useState } from "react";
-import {
-  AnalysisResponse,
-  ClassificationModelResult,
-  RegressionModelResult,
-} from "@/lib/types";
+import { AnalysisResponse, ClassificationModelResult, RegressionModelResult } from "@/lib/types";
 import { ActualVsPredictedChart } from "@/components/charts/ActualVsPredictedChart";
 import { ClusterScatterChart } from "@/components/charts/ClusterScatterChart";
 import { ConfusionMatrixGrid } from "@/components/charts/ConfusionMatrixGrid";
 import { FeatureImportanceChart } from "@/components/charts/FeatureImportanceChart";
+import { TimeSeriesChart } from "@/components/charts/TimeSeriesChart";
 import { ResidualChart } from "@/components/charts/ResidualChart";
-import {
-  AlertTriangle,
-  Award,
-  CheckCircle,
-  Cpu,
-  Info,
-  RefreshCw,
-  Sparkles,
-  Zap,
-} from "lucide-react";
+import { AlertTriangle, Award, CheckCircle, Info, RefreshCw, Sparkles, Zap } from "lucide-react";
 
 interface MachineLearningTabProps {
   data: AnalysisResponse;
@@ -29,13 +17,10 @@ interface MachineLearningTabProps {
 
 export function MachineLearningTab({ data, onReAnalyze }: MachineLearningTabProps) {
   const { problem_detection, plan, modeling, clustering, schema } = data;
-  const [selectedTarget, setSelectedTarget] = useState<string>(
-    problem_detection.target_column || ""
-  );
   const [isReRunning, setIsReRunning] = useState(false);
 
   const handleTargetChange = async (newTarget: string) => {
-    setSelectedTarget(newTarget);
+    if (isReRunning) return;
     setIsReRunning(true);
     try {
       await onReAnalyze(newTarget);
@@ -77,14 +62,16 @@ export function MachineLearningTab({ data, onReAnalyze }: MachineLearningTabProp
           <div className="flex items-center gap-2 bg-slate-950 p-2 rounded-lg border border-slate-800 shrink-0">
             <span className="text-xs text-slate-400 whitespace-nowrap pl-1">Target:</span>
             <select
-              value={selectedTarget}
+              value={problem_detection.target_column || ""}
+              aria-label="Model target"
               disabled={isReRunning}
               onChange={(e) => handleTargetChange(e.target.value)}
               className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded px-2.5 py-1 focus:outline-none focus:border-blue-500 font-medium"
             >
-              {schema.columns.map((c) => (
-                <option key={c.name} value={c.name}>
-                  {c.name} ({c.inferred_type})
+              <option value="">Auto detect</option>
+              {schema.potential_targets.map((c) => (
+                <option key={c.column} value={c.column}>
+                  {c.column} ({c.suggested_type})
                 </option>
               ))}
             </select>
@@ -106,7 +93,7 @@ export function MachineLearningTab({ data, onReAnalyze }: MachineLearningTabProp
       {/* Supervised Models Benchmark */}
       {modeling && modeling.models.length > 0 && (
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="flex items-center gap-2">
                 <Award className="w-5 h-5 text-amber-400" />
@@ -118,7 +105,7 @@ export function MachineLearningTab({ data, onReAnalyze }: MachineLearningTabProp
             </div>
             {modeling.best_model_name && (
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                <Sparkles className="w-3.5 h-3.5" /> Champion: {modeling.best_model_name}
+                <Sparkles className="w-3.5 h-3.5" /> Selected: {modeling.best_model_name}
               </span>
             )}
           </div>
@@ -134,7 +121,7 @@ export function MachineLearningTab({ data, onReAnalyze }: MachineLearningTabProp
                       <th className="py-2.5 px-3 text-right">R² (Test)</th>
                       <th className="py-2.5 px-3 text-right">RMSE</th>
                       <th className="py-2.5 px-3 text-right">MAE</th>
-                      <th className="py-2.5 px-3 text-right">5-Fold CV R²</th>
+                      <th className="py-2.5 px-3 text-right">Training CV R²</th>
                     </>
                   ) : (
                     <>
@@ -143,7 +130,7 @@ export function MachineLearningTab({ data, onReAnalyze }: MachineLearningTabProp
                       <th className="py-2.5 px-3 text-right">Precision</th>
                       <th className="py-2.5 px-3 text-right">Recall</th>
                       <th className="py-2.5 px-3 text-right">ROC-AUC</th>
-                      <th className="py-2.5 px-3 text-right">5-Fold CV F1</th>
+                      <th className="py-2.5 px-3 text-right">Training CV F1</th>
                     </>
                   )}
                   <th className="py-2.5 px-3 text-center">Status</th>
@@ -189,7 +176,7 @@ export function MachineLearningTab({ data, onReAnalyze }: MachineLearningTabProp
                       <td className="py-2.5 px-3 text-center font-sans">
                         {isBest ? (
                           <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                            Champion
+                            Selected
                           </span>
                         ) : (
                           <span className="text-[10px] text-slate-500">Benchmark</span>
@@ -204,10 +191,13 @@ export function MachineLearningTab({ data, onReAnalyze }: MachineLearningTabProp
 
           <div className="p-3 bg-slate-950/60 rounded-lg border border-slate-800 text-xs text-slate-300">
             <strong>Validation Finding:</strong> {modeling.insight}
+            <p className="mt-2">Training CV folds: {modeling.cv_folds}. {String(modeling.preparation.sampling)}; {String(modeling.preparation.modeled_rows)} rows modeled. Missing targets: {String(modeling.preparation.missing_target_rows)}; duplicates removed: {String(modeling.preparation.duplicate_rows_removed)}.</p>
+            {modeling.failed_models.length > 0 && <p className="mt-2 text-amber-300">Unavailable models: {modeling.failed_models.join(", ")}. No scores were substituted.</p>}
           </div>
         </div>
       )}
 
+      {!modeling && <p className="rounded-lg border border-slate-800 p-4 text-sm text-slate-400">Supervised modeling is unavailable for this objective or dataset. See the analysis ledger below for the required target, sample size, or resource limits.</p>}
       {/* Model Diagnostics & Visualizations */}
       {championModel && (
         <div className="space-y-4">
@@ -247,11 +237,11 @@ export function MachineLearningTab({ data, onReAnalyze }: MachineLearningTabProp
       {/* Unsupervised Clustering / Segmentation if available */}
       {clustering && (
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-base font-semibold text-white">Unsupervised Segmentation Analysis</h3>
               <p className="text-xs text-slate-400">
-                K-Means clustering (optimal k = {clustering.optimal_k}, Silhouette = {clustering.kmeans_result.silhouette || "N/A"})
+                K-Means clustering (selected k = {clustering.optimal_k}, Silhouette = {clustering.kmeans_result.silhouette ?? "N/A"})
               </p>
             </div>
             <span className="text-xs px-2.5 py-1 bg-purple-950/50 text-purple-300 border border-purple-800 rounded-full font-medium">
@@ -260,7 +250,7 @@ export function MachineLearningTab({ data, onReAnalyze }: MachineLearningTabProp
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-            <ClusterScatterChart points={clustering.kmeans_result.scatter_2d} />
+            <div><ClusterScatterChart points={clustering.kmeans_result.scatter_2d} /><p className="mt-3 text-xs text-slate-400">{clustering.sampling_note}</p></div>
 
             {/* Discovered Cluster Profiles */}
             <div className="space-y-3">
@@ -270,7 +260,7 @@ export function MachineLearningTab({ data, onReAnalyze }: MachineLearningTabProp
               <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                 {clustering.kmeans_result.cluster_profiles.map((cp, idx) => (
                   <div key={idx} className="p-3 bg-slate-950/60 border border-slate-800 rounded-lg text-xs space-y-1.5">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
                       <span className="font-semibold text-slate-200">{cp.name}</span>
                       <span className="font-mono text-purple-400">
                         {cp.size} observations ({cp.percentage}%)
@@ -291,6 +281,17 @@ export function MachineLearningTab({ data, onReAnalyze }: MachineLearningTabProp
         </div>
       )}
 
+      {data.pca && <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 space-y-3">
+        <h3 className="text-base font-semibold text-white">Principal Component Analysis</h3>
+        <p className="text-xs text-slate-400">{data.pca.summary} {data.pca.sample_count} complete rows used; {data.pca.excluded_missing_rows} incomplete rows excluded.</p>
+        <ClusterScatterChart title="Principal Component Projection" points={data.pca.points_2d.map(p => ({ pca_x: p.pc1, pca_y: p.pc2, cluster: 0, cluster_label: "Observation" }))} />
+      </section>}
+      {data.timeseries && <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 space-y-3">
+        <h3 className="text-base font-semibold text-white">Time-series Diagnostics</h3>
+        <p className="text-xs text-slate-300">{data.timeseries.stationarity_interpretation}</p>
+        <TimeSeriesChart points={data.timeseries.chart_series} />
+        <p className="text-xs text-slate-400">{data.timeseries.total_observations} observations. These diagnostics do not constitute a forecast.</p>
+      </section>}
       {/* Execution Plan: Admissible vs Skipped Algorithms */}
       <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5">
         <h3 className="text-base font-semibold text-white mb-1">Analysis Planner &amp; Admissibility Ledger</h3>

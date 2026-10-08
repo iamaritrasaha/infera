@@ -1,6 +1,5 @@
 import React from "react";
-import Link from "next/link";
-import { BookOpen, CheckCircle, Cpu, Database, FileText, FlaskConical, Layers, ShieldCheck } from "lucide-react";
+import { BookOpen, Cpu, Database, FlaskConical, Layers, ShieldCheck } from "lucide-react";
 
 export default function DocsPage() {
   return (
@@ -15,7 +14,7 @@ export default function DocsPage() {
           System Documentation &amp; Scientific Protocol
         </h1>
         <p className="text-slate-400 text-base">
-          How Infera ingests, profiles, validates, models, and explains structured tabular datasets without hallucinations.
+          How Infera ingests, profiles, validates, models, and explains structured tabular datasets with inspectable computational evidence.
         </p>
       </div>
 
@@ -28,7 +27,7 @@ export default function DocsPage() {
           &ldquo;Infera doesn&apos;t guess. It computes, validates, and explains.&rdquo;
         </blockquote>
         <p>
-          Unlike generic LLM wrappers that fabricate metrics or execute arbitrary code without bounds, Infera employs a modular, testable Python analysis engine. Numerical claims (such as Pearson coefficients, p-values, R² scores, or silhouette coefficients) originate strictly from actual SciPy and Scikit-Learn executions.
+          Infera uses a modular, testable Python analysis engine. Numerical claims (such as Pearson coefficients, p-values, R² scores, or silhouette coefficients) originate strictly from actual SciPy and scikit-learn executions.
         </p>
       </section>
 
@@ -65,7 +64,7 @@ export default function DocsPage() {
           <FlaskConical className="w-5 h-5 text-purple-400" /> 3. Formal Hypothesis Testing Suite
         </h2>
         <p>
-          Infera automatically discovers suitable variable pairings and applies rigorous statistical tests at &alpha; = 0.05:
+          Infera automatically discovers suitable variable pairings and applies exploratory statistical tests at &alpha; = 0.05:
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-2">
           <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg">
@@ -87,6 +86,8 @@ export default function DocsPage() {
         </div>
       </section>
 
+      <p className="text-xs text-amber-300">Tests are exploratory, use unadjusted p-values, and do not establish causation. Repeated comparisons increase false-positive risk. Schema and target detection are heuristics that should be reviewed.</p>
+
       {/* 4. Machine Learning */}
       <section className="space-y-4">
         <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
@@ -97,13 +98,13 @@ export default function DocsPage() {
         </p>
         <ul className="list-disc pl-5 space-y-2 text-slate-400">
           <li>
-            <strong className="text-slate-200">Partitioning:</strong> 80/20 train/test split (stratified for classification tasks).
+            <strong className="text-slate-200">Partitioning:</strong> Approximately 80/20 train/test split; classification keeps every eligible class represented. Missing targets and duplicate modeling observations are removed before splitting.
           </li>
           <li>
             <strong className="text-slate-200">Preprocessing Transformers:</strong> Imputers (median for numeric, mode for categorical) and StandardScalers / OneHotEncoders are fitted strictly on the training partition and transformed onto test data.
           </li>
           <li>
-            <strong className="text-slate-200">Regression Benchmark:</strong> DummyRegressor (baseline), Linear Regression, Ridge (L2), Lasso (L1), ElasticNet (L1+L2), Random Forest, and Gradient Boosting. Evaluates R², RMSE, MAE, and 5-fold cross-validation.
+            <strong className="text-slate-200">Regression Benchmark:</strong> DummyRegressor (baseline), Linear Regression, Ridge (L2), Lasso (L1), ElasticNet (L1+L2), Random Forest, and Gradient Boosting. Evaluates R², RMSE, MAE, and up to 5-fold training cross-validation.
           </li>
           <li>
             <strong className="text-slate-200">Classification Benchmark:</strong> DummyClassifier (prior baseline), Logistic Regression, Random Forest, and Gradient Boosting. Evaluates Accuracy, Macro F1, Precision, Recall, and ROC-AUC.
@@ -111,18 +112,20 @@ export default function DocsPage() {
         </ul>
       </section>
 
+      <p className="text-xs text-slate-400">Models are selected by available training cross-validation scores, including the baseline. If CV is unavailable, the holdout-based selection is explicitly labeled as potentially optimistic. Results describe one split. Numeric modeling uses at most 5,000 deterministically sampled eligible rows, and clustering uses at most 1,500 complete rows. PCA and time-series diagnostics are exploratory; forecasts are not generated.</p>
+
       {/* 5. Privacy & Zero-Budget Stack */}
       <section className="space-y-4">
         <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-          <Layers className="w-5 h-5 text-indigo-400" /> 5. Privacy &amp; Zero-Budget Guarantees
+          <Layers className="w-5 h-5 text-indigo-400" /> 5. Privacy &amp; Free Deployment
         </h2>
         <p>
           Infera is designed to run for ₹0 during both local development and cloud deployment:
         </p>
         <ul className="list-disc pl-5 space-y-2 text-slate-400">
-          <li>Uploaded datasets are parsed in memory and held in a temporary TTL cache (1 hour). No persistent database is required.</li>
+          <li>Uploaded datasets are parsed in memory and held in a bounded temporary cache (one hour of inactivity, with earlier eviction under memory pressure). Anonymous sessions authorize access independently of dataset IDs. No persistent database is required.</li>
           <li>No external paid LLM APIs (OpenAI, Anthropic) are called. All explanations use deterministic, evidence-backed templates.</li>
-          <li>The backend runs seamlessly on Render Free (or Docker) and the frontend deploys on Vercel Free.</li>
+          <li>The backend targets Render Free (or local Docker) and the frontend targets Vercel Hobby. Cold starts, limited memory, and service quotas apply.</li>
         </ul>
       </section>
     </div>

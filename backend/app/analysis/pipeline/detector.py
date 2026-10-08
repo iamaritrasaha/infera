@@ -28,11 +28,25 @@ def detect_problem_type(
     row_count = len(df)
     alt_targets = [t for t in schema.potential_targets]
 
+    if user_target is not None:
+        if user_target not in df.columns:
+            raise ValueError("Selected target column does not exist in this dataset.")
+        if user_target in schema.constant_columns or user_target in schema.datetime_columns or user_target in schema.text_columns or user_target in schema.id_columns:
+            raise ValueError("Selected target is constant, an identifier, text, or datetime. Choose a suitable numerical or categorical target.")
+
     # If user explicitly specified target
     if user_target and user_target in df.columns:
         series = df[user_target].dropna()
         n_unique = series.nunique()
         is_num = user_target in schema.numerical_columns
+
+        if is_num and n_unique > 2 and schema.datetime_columns:
+            return ProblemDetectionResult(
+                problem_type="time_series", target_column=user_target, confidence="heuristic",
+                reason="A datetime column and numerical target were selected. Time-series diagnostics avoid random-split forecasting claims.",
+                target_details={"datetime_column": schema.datetime_columns[0], "metric": user_target},
+                alternative_targets=alt_targets,
+            )
 
         is_float = pd.api.types.is_float_dtype(series)
         if is_num and (n_unique > 10 or (is_float and n_unique > 2)):
@@ -93,6 +107,8 @@ def detect_problem_type(
         "status",
         "price",
         "sales",
+        "weekly_sales",
+        "performance_tier",
         "revenue",
         "profit",
         "score",
@@ -155,8 +171,8 @@ def detect_problem_type(
         # Check if rows appear chronologically ordered or monotonic
         try:
             parsed_dates = pd.to_datetime(df[dt_col].dropna().head(20), errors="coerce")
-            if parsed_dates.is_monotonic_increasing and not selected_col:
-                num_target = schema.numerical_columns[0]
+            if parsed_dates.is_monotonic_increasing and (not selected_col or selected_type == "regression"):
+                num_target = selected_col or schema.numerical_columns[0]
                 return ProblemDetectionResult(
                     problem_type="time_series",
                     target_column=num_target,
@@ -173,7 +189,7 @@ def detect_problem_type(
         return ProblemDetectionResult(
             problem_type=selected_type,
             target_column=selected_col,
-            confidence="high",
+            confidence="heuristic",
             reason=selected_reason,
             target_details={"name": selected_col, "unique_count": int(df[selected_col].nunique())},
             alternative_targets=[t for t in alt_targets if t["column"] != selected_col],

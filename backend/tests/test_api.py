@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 
-client = TestClient(app)
+client = TestClient(app, headers={"X-Infera-Session": "a" * 64})
 SAMPLE_DIR = Path(__file__).resolve().parent.parent.parent / "sample_data"
 
 

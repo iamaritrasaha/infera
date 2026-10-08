@@ -1,8 +1,12 @@
 """Dataset loading, sanitization, memory caching, and sample dataset provision."""
 
+import csv
 import io
+import re
+import threading
 import time
 import uuid
+import zipfile
 
 import pandas as pd
 
@@ -16,31 +20,41 @@ class DatasetSessionStore:
     def __init__(self, max_items: int = 20, ttl_seconds: int = 3600):
         self.max_items = max_items
         self.ttl = ttl_seconds
-        self._store: dict[str, tuple[float, pd.DataFrame, str]] = {}
+        self._store: dict[str, tuple[float, pd.DataFrame, str, str]] = {}
+        self._lock = threading.RLock()
 
-    def put(self, df: pd.DataFrame, name: str) -> str:
-        self._cleanup()
-        dataset_id = str(uuid.uuid4())
-        self._store[dataset_id] = (time.time(), df, name)
-        logger.info(
-            f"Cached dataset '{name}' under ID {dataset_id[:8]} (total cached: {len(self._store)})"
-        )
-        return dataset_id
+    def put(self, df: pd.DataFrame, name: str, owner: str) -> str:
+        with self._lock:
+            self._cleanup()
+            size = int(df.memory_usage(deep=True).sum())
+            if size > settings.MAX_DATASET_MEMORY_BYTES:
+                raise ValueError("Decoded dataset exceeds the memory limit. Upload a smaller sample.")
+            while self._store and (
+                len(self._store) >= self.max_items
+                or sum(int(e[1].memory_usage(deep=True).sum()) for e in self._store.values())
+                + size > settings.MAX_CACHE_MEMORY_BYTES
+            ):
+                oldest = min(self._store, key=lambda k: self._store[k][0])
+                del self._store[oldest]
+            dataset_id = str(uuid.uuid4())
+            self._store[dataset_id] = (time.monotonic(), df, name, owner)
+            logger.info("Cached dataset with %d rows and %d columns", len(df), len(df.columns))
+            return dataset_id
 
-    def get(self, dataset_id: str) -> tuple[pd.DataFrame, str] | None:
-        self._cleanup()
-        entry = self._store.get(dataset_id)
-        if not entry:
-            return None
-        _, df, name = entry
-        # Refresh access timestamp
-        self._store[dataset_id] = (time.time(), df, name)
-        return df, name
+    def get(self, dataset_id: str, owner: str | None = None) -> tuple[pd.DataFrame, str] | None:
+        with self._lock:
+            self._cleanup()
+            entry = self._store.get(dataset_id)
+            if not entry or (owner is not None and entry[3] != owner):
+                return None
+            _, df, name, stored_owner = entry
+            self._store[dataset_id] = (time.monotonic(), df, name, stored_owner)
+            return df, name
 
     def _cleanup(self):
-        now = time.time()
+        now = time.monotonic()
         # Evict expired
-        expired = [k for k, (ts, _, _) in self._store.items() if now - ts > self.ttl]
+        expired = [k for k, (ts, _, _, _) in self._store.items() if now - ts > self.ttl]
         for k in expired:
             del self._store[k]
         # Evict oldest if exceeding max_items
@@ -57,7 +71,7 @@ session_store = DatasetSessionStore(
 
 def parse_dataset_bytes(content: bytes, filename: str) -> pd.DataFrame:
     """Safely parses raw file bytes into a Pandas DataFrame."""
-    if len(content.strip()) == 0:
+    if not content or not content.strip():
         raise ValueError("Uploaded file is empty (contains zero bytes).")
 
     if len(content) > settings.MAX_UPLOAD_SIZE_BYTES:
@@ -72,22 +86,43 @@ def parse_dataset_bytes(content: bytes, filename: str) -> pd.DataFrame:
 
     try:
         if ext == "csv":
+            if b"\x00" in content:
+                raise ValueError("CSV contains binary content.")
+            # Inspect the original header before Pandas can rename duplicate columns.
+            try:
+                decoded = content.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                decoded = content.decode("latin1")
+            original_header = next(csv.reader(io.StringIO(decoded)))
+            trimmed_header = [c.strip() for c in original_header]
+            if len(set(trimmed_header)) != len(trimmed_header) or any(not c for c in trimmed_header):
+                raise ValueError("CSV column names must be non-empty and unique.")
             # Attempt UTF-8, fallback to Latin-1
             try:
-                df = pd.read_csv(io.BytesIO(content), encoding="utf-8")
+                df = pd.read_csv(io.BytesIO(content), encoding="utf-8", nrows=settings.MAX_ROW_COUNT + 1)
             except UnicodeDecodeError:
-                df = pd.read_csv(io.BytesIO(content), encoding="latin1")
+                df = pd.read_csv(io.BytesIO(content), encoding="latin1", nrows=settings.MAX_ROW_COUNT + 1)
         elif ext == "xlsx":
-            df = pd.read_excel(io.BytesIO(content), engine="openpyxl")
+            with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                if sum(f.file_size for f in archive.infolist()) > 64 * 1024 * 1024:
+                    raise ValueError("Spreadsheet expands beyond the decoded size limit.")
+            df = pd.read_excel(io.BytesIO(content), engine="openpyxl", nrows=settings.MAX_ROW_COUNT + 1)
         elif ext == "json":
             df = pd.read_json(io.BytesIO(content))
         elif ext == "parquet":
+            import pyarrow.parquet as pq
+
+            metadata = pq.ParquetFile(io.BytesIO(content)).metadata
+            if metadata.num_rows > settings.MAX_ROW_COUNT or metadata.num_columns > settings.MAX_COLUMN_COUNT:
+                raise ValueError("Parquet dimensions exceed the row or column limit.")
+            if sum(metadata.row_group(i).total_byte_size for i in range(metadata.num_row_groups)) > settings.MAX_DATASET_MEMORY_BYTES:
+                raise ValueError("Parquet expands beyond the decoded memory limit.")
             df = pd.read_parquet(io.BytesIO(content))
         else:
             raise ValueError(f"No parser available for '.{ext}'.")
     except Exception as e:
-        logger.error(f"Failed to parse dataset '{filename}': {e!s}")
-        raise ValueError(f"Unable to parse dataset: {e!s}")
+        logger.warning("Dataset parser rejected %s input (%s)", ext, type(e).__name__)
+        raise ValueError("Unable to parse dataset. Check the format, table dimensions, and decoded size limits.") from e
 
     if len(df) == 0:
         raise ValueError("Uploaded file is empty (contains zero rows).")
@@ -109,8 +144,24 @@ def parse_dataset_bytes(content: bytes, filename: str) -> pd.DataFrame:
 
     # Sanitize column names: convert all to string, strip whitespace
     df.columns = [str(c).strip() for c in df.columns]
+    if len(set(df.columns)) != len(df.columns) or any(not c or len(c) > 100 for c in df.columns):
+        raise ValueError("Column names must be non-empty, unique after trimming, and at most 100 characters.")
+    for col in [c for c in df if not pd.api.types.is_numeric_dtype(df[c])]:
+        if df[col].map(lambda v: isinstance(v, (list, dict, tuple, set))).any():
+            raise ValueError("Nested values are unsupported. Upload a flat table with scalar cells.")
+    import numpy as np
+
+    if any(np.isinf(df[col]).any() for col in df.select_dtypes(include="number").columns):
+        raise ValueError("Numerical columns contain infinite values. Replace them with finite values or blanks.")
+    if int(df.memory_usage(deep=True).sum()) > settings.MAX_DATASET_MEMORY_BYTES:
+        raise ValueError("Decoded dataset exceeds the memory limit. Upload a smaller sample.")
 
     return df
+
+
+def safe_dataset_name(filename: str) -> str:
+    basename = filename.replace("\\", "/").rsplit("/", 1)[-1].rsplit(".", 1)[0]
+    return re.sub(r"[\x00-\x1f\x7f]", "", basename).strip()[:100] or "Dataset"
 
 
 def get_sample_datasets() -> list[dict]:
@@ -127,7 +178,7 @@ def get_sample_datasets() -> list[dict]:
         {
             "id": "customer_churn",
             "name": "Telecom Customer Churn",
-            "description": "Subscriber account tenure, services, and billing contracts. Perfect for binary classification and class balance analysis.",
+            "description": "Subscriber account tenure, services, and billing contracts. Suitable for binary classification and class balance analysis.",
             "filename": "customer_churn.csv",
             "recommended_target": "churned",
             "suggested_problem_type": "binary_classification",
@@ -135,7 +186,7 @@ def get_sample_datasets() -> list[dict]:
         {
             "id": "student_performance",
             "name": "Student Exam Performance",
-            "description": "Study habits, attendance, and exam scores. Excellent for multiclass tier prediction or continuous score regression.",
+            "description": "Study habits, attendance, and exam scores. Suitable for multiclass tier prediction or continuous score regression.",
             "filename": "student_performance.csv",
             "recommended_target": "performance_tier",
             "suggested_problem_type": "multiclass_classification",

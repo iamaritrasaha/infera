@@ -2,7 +2,7 @@
 
 import React from "react";
 import { AnalysisResponse } from "@/lib/types";
-import { AlertCircle, AlertTriangle, CheckCircle, Copy, HelpCircle, Layers, ShieldCheck } from "lucide-react";
+import { AlertCircle, CheckCircle, Copy, Layers } from "lucide-react";
 
 interface DataQualityProps {
   data: AnalysisResponse;
@@ -177,7 +177,7 @@ export function DataQualityTab({ data }: DataQualityProps) {
             {cardinality.constant_columns.length > 0 ? (
               <ul className="text-rose-400 space-y-1">
                 {cardinality.constant_columns.map((c, i) => (
-                  <li key={i}>&bull; {c} (Must be dropped)</li>
+                  <li key={i}>&bull; {c} (Excluded from prediction)</li>
                 ))}
               </ul>
             ) : (

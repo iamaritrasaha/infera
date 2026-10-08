@@ -1,5 +1,6 @@
 """Serialization helper converting numpy and pandas primitives to native Python types."""
 
+import math
 from typing import Any
 
 import numpy as np
@@ -18,10 +19,12 @@ def sanitize_for_json(obj: Any) -> Any:
         return int(obj)
     elif isinstance(obj, np.floating):
         val = float(obj)
-        return None if np.isnan(val) else val
+        return val if math.isfinite(val) else None
     elif isinstance(obj, np.bool_):
         return bool(obj)
-    elif pd.isna(obj):
+    elif isinstance(obj, float) and not math.isfinite(obj):
+        return None
+    elif obj is pd.NA or obj is pd.NaT or obj is None:
         return None
     elif isinstance(obj, (pd.Timestamp, np.datetime64)):
         return str(obj)

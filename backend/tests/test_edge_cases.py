@@ -18,7 +18,7 @@ from app.core.config import Settings
 from app.main import app
 from app.services.dataset_service import parse_dataset_bytes
 
-client = TestClient(app)
+client = TestClient(app, headers={"X-Infera-Session": "a" * 64})
 
 
 def test_empty_dataframe_rejected():
@@ -124,7 +124,7 @@ def test_high_cardinality_columns_do_not_explode_memory():
         is_classification=True,
     )
     # The preprocessor must have filtered out unique_id (100 distinct categories > 50)
-    assert "numeric_feat" in prepped.feature_names
+    assert any(f.endswith("numeric_feat") for f in prepped.feature_names)
     assert not any(f.startswith("unique_id") for f in prepped.feature_names)
 
 
@@ -253,10 +253,12 @@ def test_concurrency_semaphore_blocks_excessive_requests(monkeypatch):
 
     from app.api.routes import analysis
 
+    dataset_id = client.post("/api/samples/housing/load").json()["dataset_id"]
+
     busy_sem = asyncio.Semaphore(0)
     monkeypatch.setattr(analysis, "_get_semaphore", lambda: busy_sem)
     monkeypatch.setattr(analysis.settings, "ANALYSIS_SEMAPHORE_TIMEOUT_SECONDS", 0.05)
 
-    resp = client.post("/api/analyze", json={"dataset_id": "valid-session-id-12345"})
+    resp = client.post("/api/analyze", json={"dataset_id": dataset_id})
     assert resp.status_code == 429
     assert "capacity" in resp.json()["detail"].lower()

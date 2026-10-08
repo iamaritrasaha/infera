@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 from statsmodels.tsa.stattools import adfuller
 
@@ -13,9 +14,9 @@ class TimeSeriesResult:
     datetime_column: str
     metric_column: str
     total_observations: int
-    adf_statistic: float
-    adf_p_value: float
-    is_stationary: bool
+    adf_statistic: float | None
+    adf_p_value: float | None
+    is_stationary: bool | None
     critical_values: dict[str, float]
     stationarity_interpretation: str
     lag_autocorrelations: list[dict[str, float | int]]
@@ -30,6 +31,7 @@ def analyze_timeseries(
 ) -> TimeSeriesResult | None:
     """Computes ADF stationarity test and autocorrelation series."""
     clean = df[[dt_col, metric_col]].dropna().copy()
+    clean[metric_col] = pd.to_numeric(clean[metric_col], errors="coerce")
     if len(clean) < 15:
         return None
 
@@ -45,23 +47,27 @@ def analyze_timeseries(
 
     # ADF Test for Stationarity
     try:
-        adf_out = adfuller(metric_vals, autolag="AIC")
+        dates = clean[dt_col]
+        if dates.duplicated().any() or dates.diff().dropna().nunique() != 1:
+            raise ValueError("ADF requires unique timestamps at regular intervals")
+        adf_out = adfuller(metric_vals, maxlag=min(12, len(metric_vals) // 2 - 2), autolag="AIC", result_object=False)
         adf_stat = float(adf_out[0])
         adf_p = float(adf_out[1])
+        if not np.isfinite(adf_stat) or not np.isfinite(adf_p):
+            raise ValueError("ADF did not return finite statistics")
         crit_vals = {str(k): round(float(v), 3) for k, v in adf_out[4].items()}
         is_stat = adf_p < 0.05
     except Exception:
-        adf_stat, adf_p = 0.0, 1.0
+        adf_stat, adf_p = None, None
         crit_vals = {}
-        is_stat = False
+        is_stat = None
 
-    interp = (
-        f"The series is stationary (ADF statistic = {adf_stat:.3f}, p = {adf_p:.4f} < 0.05). "
-        "Mean and variance appear stable across time."
-        if is_stat
-        else f"The series is non-stationary (ADF statistic = {adf_stat:.3f}, p = {adf_p:.4f} >= 0.05). "
-        "Evidence indicates stochastic trend or drift; differencing is recommended before autoregressive modeling."
-    )
+    if is_stat is None:
+        interp = "ADF is unavailable: requires a varying numerical series with unique, regularly spaced timestamps. No stationarity conclusion is reported."
+    elif is_stat:
+        interp = f"ADF rejects the unit-root null (statistic {adf_stat:.3f}, p = {adf_p:.4g}). This supports stationarity under this test's assumptions; it does not prove it."
+    else:
+        interp = f"ADF does not reject the unit-root null (statistic {adf_stat:.3f}, p = {adf_p:.4g}). Evidence is insufficient to conclude stationarity."
 
     # Lag autocorrelations
     series_s = pd.Series(metric_vals)
@@ -69,10 +75,11 @@ def analyze_timeseries(
     for lag in [1, 2, 3, 5, 7]:
         if len(series_s) > lag + 5:
             ac_val = float(series_s.autocorr(lag=lag))
-            lag_acs.append({"lag": lag, "autocorrelation": round(ac_val, 4)})
+            if np.isfinite(ac_val):
+                lag_acs.append({"lag": lag, "autocorrelation": round(ac_val, 4)})
 
     # Subsampled chart points (up to 80 points)
-    step = max(1, len(clean) // 80)
+    step = max(1, int(np.ceil(len(clean) / 80)))
     chart_pts: list[dict[str, str | float]] = []
     for i in range(0, len(clean), step):
         row = clean.iloc[i]
@@ -87,8 +94,8 @@ def analyze_timeseries(
         datetime_column=dt_col,
         metric_column=metric_col,
         total_observations=len(clean),
-        adf_statistic=round(adf_stat, 4),
-        adf_p_value=round(adf_p, 4),
+        adf_statistic=round(adf_stat, 4) if adf_stat is not None else None,
+        adf_p_value=adf_p,
         is_stationary=is_stat,
         critical_values=crit_vals,
         stationarity_interpretation=interp,

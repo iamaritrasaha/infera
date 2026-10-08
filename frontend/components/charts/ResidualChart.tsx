@@ -14,6 +14,8 @@ interface ResidualChartProps {
 export function ResidualChart({ data }: ResidualChartProps) {
   const [hoveredPoint, setHoveredPoint] = useState<ResidualPoint | null>(null);
 
+  data = (data || []).filter(p => Number.isFinite(p.predicted) && Number.isFinite(p.residual));
+
   if (!data || data.length === 0) {
     return <div className="text-sm text-slate-400 py-6 text-center">No residual points available.</div>;
   }
@@ -43,7 +45,7 @@ export function ResidualChart({ data }: ResidualChartProps) {
 
   return (
     <div className="bg-slate-900/60 border border-slate-800 rounded-lg p-4 flex flex-col items-center">
-      <div className="w-full flex items-center justify-between mb-2">
+      <div className="w-full flex flex-wrap items-center justify-between gap-2 mb-2">
         <h5 className="text-xs font-semibold text-slate-300">Residuals vs Predicted</h5>
         {hoveredPoint && (
           <div className="text-[11px] font-mono text-purple-400">
@@ -52,8 +54,8 @@ export function ResidualChart({ data }: ResidualChartProps) {
         )}
       </div>
 
-      <div className="relative">
-        <svg width={width} height={height} className="overflow-visible">
+      <div className="relative w-full max-w-[280px]">
+        <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="ResidualChart" className="w-full max-w-[280px] h-auto">
           {/* Axis border */}
           <line
             x1={padding}

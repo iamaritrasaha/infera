@@ -153,6 +153,7 @@ export function OverviewTab({ data, onSelectTarget }: OverviewTabProps) {
           </div>
           <input
             type="text"
+            aria-label="Search attributes"
             placeholder="Search attributes..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -240,9 +241,9 @@ export function OverviewTab({ data, onSelectTarget }: OverviewTabProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/40 font-mono text-[11px]">
-                {preview_rows.map((row: Record<string, any>, rIdx: number) => (
+                {preview_rows.map((row: Record<string, unknown>, rIdx: number) => (
                   <tr key={rIdx} className="hover:bg-slate-800/20">
-                    {Object.values(row).map((val: any, cIdx) => (
+                    {Object.values(row).map((val: unknown, cIdx) => (
                       <td key={cIdx} className="py-2 px-3 whitespace-nowrap text-slate-300">
                         {val === "" || val === null || val === undefined ? (
                           <span className="text-slate-600 italic">null</span>

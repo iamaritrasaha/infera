@@ -32,6 +32,8 @@ def run_two_sample_tests(
     alpha: float = 0.05,
 ) -> list[HypothesisTestResult]:
     """Runs Welch's/Student's t-test and Mann-Whitney U on numerical variable split by binary factor."""
+    if numerical_col == binary_col:
+        return []
     clean = df[[numerical_col, binary_col]].dropna()
     groups = clean.groupby(binary_col)[numerical_col].apply(list)
     if len(groups) != 2:
@@ -44,6 +46,7 @@ def run_two_sample_tests(
 
     results = []
 
+    lev_p = float("nan")
     # Levene's test for equality of variance
     try:
         _, lev_p = stats.levene(g1, g2)
@@ -75,7 +78,7 @@ def run_two_sample_tests(
             alt_hypothesis=f"The true population means of '{numerical_col}' differ between {labels[0]} and {labels[1]}.",
             statistic_name="t-statistic",
             statistic_value=round(t_stat, 4),
-            p_value=round(t_pval, 6),
+            p_value=t_pval,
             alpha=alpha,
             is_rejected=rejected_t,
             interpretation=interp_t,
@@ -108,7 +111,7 @@ def run_two_sample_tests(
                 alt_hypothesis=f"The distribution of '{numerical_col}' differs stochastically between the two groups.",
                 statistic_name="U-statistic",
                 statistic_value=round(u_stat, 2),
-                p_value=round(u_pval, 6),
+                p_value=u_pval,
                 alpha=alpha,
                 is_rejected=rejected_u,
                 interpretation=interp_u,
@@ -118,7 +121,7 @@ def run_two_sample_tests(
     except Exception:
         pass
 
-    return results
+    return [r for r in results if np.isfinite(r.statistic_value) and np.isfinite(r.p_value)]
 
 
 def run_anova_tests(
@@ -128,6 +131,8 @@ def run_anova_tests(
     alpha: float = 0.05,
 ) -> list[HypothesisTestResult]:
     """Runs One-way ANOVA and Kruskal-Wallis test across multiple levels."""
+    if numerical_col == multiclass_col:
+        return []
     clean = df[[numerical_col, multiclass_col]].dropna()
     groups_dict = clean.groupby(multiclass_col)[numerical_col].apply(list)
     groups = [np.array(vals, dtype=float) for vals in groups_dict.values if len(vals) >= 4]
@@ -153,7 +158,7 @@ def run_anova_tests(
                 alt_hypothesis=f"At least one group population mean of '{numerical_col}' is different.",
                 statistic_name="F-statistic",
                 statistic_value=round(f_stat, 4),
-                p_value=round(f_pval, 6),
+                p_value=f_pval,
                 alpha=alpha,
                 is_rejected=rejected_f,
                 interpretation=(
@@ -183,7 +188,7 @@ def run_anova_tests(
                 alt_hypothesis=f"At least one group has a distinct rank distribution for '{numerical_col}'.",
                 statistic_name="H-statistic",
                 statistic_value=round(h_stat, 4),
-                p_value=round(h_pval, 6),
+                p_value=h_pval,
                 alpha=alpha,
                 is_rejected=rejected_h,
                 interpretation=(
@@ -197,7 +202,7 @@ def run_anova_tests(
     except Exception:
         pass
 
-    return results
+    return [r for r in results if np.isfinite(r.statistic_value) and np.isfinite(r.p_value)]
 
 
 def run_chi_square_test(
@@ -211,6 +216,8 @@ def run_chi_square_test(
     if len(clean) < 15:
         return None
 
+    if clean[cat_col_a].nunique() > 20 or clean[cat_col_b].nunique() > 20:
+        return None
     ctab = pd.crosstab(clean[cat_col_a], clean[cat_col_b])
     if ctab.shape[0] < 2 or ctab.shape[1] < 2:
         return None
@@ -227,7 +234,7 @@ def run_chi_square_test(
         cochran_note = (
             f"Contingency matrix size: {ctab.shape[0]}x{ctab.shape[1]}, Degrees of freedom: {dof}."
         )
-        if low_expected_pct > 20.0:
+        if low_expected_pct > 20.0 or np.any(expected < 1):
             cochran_note += (
                 f" Warning: Cochran condition violated ({low_expected_pct:.1f}% of cells have expected frequency < 5). "
                 "Interpret association with caution."
@@ -243,7 +250,7 @@ def run_chi_square_test(
             alt_hypothesis=f"There is a significant association/dependence between '{cat_col_a}' and '{cat_col_b}'.",
             statistic_name="Chi2-statistic",
             statistic_value=round(chi2_stat, 4),
-            p_value=round(p_val, 6),
+            p_value=p_val,
             alpha=alpha,
             is_rejected=rejected,
             interpretation=(
@@ -271,6 +278,8 @@ def run_automated_hypothesis_suite(
     if target_col:
         if target_col in numerical_cols:
             for cat in categorical_cols:
+                if len(all_tests) >= max_tests:
+                    break
                 if cat == target_col or cat not in df.columns:
                     continue
                 nunique = df[cat].dropna().nunique()
@@ -280,6 +289,8 @@ def run_automated_hypothesis_suite(
                     all_tests.extend(run_anova_tests(df, target_col, cat))
         elif target_col in categorical_cols:
             for num in numerical_cols:
+                if len(all_tests) >= max_tests:
+                    break
                 if num == target_col or num not in df.columns:
                     continue
                 nunique = df[target_col].dropna().nunique()
@@ -288,6 +299,8 @@ def run_automated_hypothesis_suite(
                 elif 3 <= nunique <= 8:
                     all_tests.extend(run_anova_tests(df, num, target_col))
             for cat in categorical_cols:
+                if len(all_tests) >= max_tests:
+                    break
                 if cat != target_col and cat in df.columns:
                     t = run_chi_square_test(df, target_col, cat)
                     if t:
@@ -300,7 +313,7 @@ def run_automated_hypothesis_suite(
             if cat not in df.columns or df[cat].dropna().nunique() != 2:
                 continue
             for num in numerical_cols:
-                if num not in df.columns or (
+                if num == cat or num not in df.columns or (
                     target_col and (num == target_col or cat == target_col)
                 ):
                     continue
@@ -325,4 +338,7 @@ def run_automated_hypothesis_suite(
             if len(all_tests) >= max_tests:
                 break
 
-    return all_tests[:max_tests]
+    selected = all_tests[:max_tests]
+    for test in selected:
+        test.assumptions_note += " Exploratory p-value; no multiple-testing adjustment. Independence and study design must be checked by the analyst."
+    return selected

@@ -1,12 +1,16 @@
 """Analysis execution endpoints for automated data science pipeline."""
 
 import asyncio
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.config import settings
+from app.core.logging import logger
+from app.core.security import require_session
 from app.models.schemas import AnalysisResponse, AnalyzeRequest
 from app.services.analysis_service import execute_analysis
+from app.services.dataset_service import session_store
 
 router = APIRouter(prefix="/api", tags=["Analysis"])
 
@@ -22,8 +26,10 @@ def _get_semaphore() -> asyncio.Semaphore:
 
 
 @router.post("/analyze", response_model=AnalysisResponse)
-async def run_analysis(request: AnalyzeRequest) -> AnalysisResponse:
+async def run_analysis(request: AnalyzeRequest, owner: Annotated[str, Depends(require_session)]) -> AnalysisResponse:
     """Executes full automated profiling, statistics, hypothesis testing, and ML modeling."""
+    if not session_store.get(request.dataset_id, owner):
+        raise HTTPException(404, "Dataset is unavailable in this session or has expired. Please re-upload.")
     semaphore = _get_semaphore()
     try:
         await asyncio.wait_for(
@@ -37,24 +43,25 @@ async def run_analysis(request: AnalyzeRequest) -> AnalysisResponse:
                 "Infera free-tier engine is currently executing another analysis at capacity. "
                 "Please retry in a few moments."
             ),
+            headers={"Retry-After": "10"},
         )
 
     try:
-        loop = asyncio.get_running_loop()
         # Offload CPU-heavy computation to thread pool so /health probes remain responsive
-        payload = await loop.run_in_executor(
-            None,
-            execute_analysis,
-            request.dataset_id,
-            request.target_column,
-        )
+        task = asyncio.create_task(asyncio.to_thread(execute_analysis, request.dataset_id, request.target_column, owner))
+        try:
+            payload = await asyncio.shield(task)
+        except asyncio.CancelledError:
+            await task
+            raise
         return AnalysisResponse(**payload)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
+        logger.error("Analysis failed (%s)", type(e).__name__)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Infera analysis engine encountered an unexpected error: {e!s}",
+            detail="The analysis engine could not complete this request. Please retry shortly.",
         )
     finally:
         semaphore.release()

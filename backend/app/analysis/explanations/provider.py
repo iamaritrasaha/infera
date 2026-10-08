@@ -100,7 +100,7 @@ class TemplateExplanationProvider(ExplanationProvider):
                     "duplicate_percentage": duplicate_pct,
                     "outlier_count": outlier_count,
                 },
-                calculation_details="HealthScore = 100 - (missing_pct * 1.5) - (duplicate_pct * 2.0) - min(20, outlier_count * 0.2)",
+                calculation_details="HealthScore = 100 - (missing_pct * 1.5) - (duplicate_pct * 2.0) - min(15, outlier_count * 0.15); rounded and clipped to [0, 100]",
             )
         )
 
@@ -205,31 +205,31 @@ class TemplateExplanationProvider(ExplanationProvider):
             rmse = float(metrics_summary.get("rmse", 0.0))
             mae = float(metrics_summary.get("mae", 0.0))
             if r2 <= 0.0:
-                summary_text = f"Baseline mean predictor was not exceeded (best test R² = {r2:.3f}, RMSE = {rmse:.2f})."
+                summary_text = f"Test-set mean reference was not exceeded (best test R² = {r2:.3f}, RMSE = {rmse:.2f})."
                 plain_text = (
                     f"Out of all benchmarked regression algorithms, '{best_model}' yielded test R² = {r2:.3f} and RMSE = {rmse:.2f}. "
-                    "Because test R² is non-positive, linear and tree models did not outperform a simple baseline mean prediction on held-out test data."
+                    "Because test R² is non-positive, the selected model has not exceeded the test-set mean reference. Consult the trained median baseline for a deployable comparison."
                 )
             else:
-                summary_text = f"Achieved top predictive fit (R² = {r2:.3f}, RMSE = {rmse:.2f})."
+                summary_text = f"Selected candidate fit (R² = {r2:.3f}, RMSE = {rmse:.2f})."
                 plain_text = (
-                    f"Out of all benchmarked regression algorithms, '{best_model}' demonstrated optimal predictive capability "
+                    f"Out of all benchmarked regression algorithms, '{best_model}' was evaluated "
                     f"on un-seen test observations, explaining {r2 * 100:.1f}% of target variance with an average absolute error (MAE) of {mae:.2f}."
                 )
             insights.append(
                 StructuredInsight(
                     category="modeling",
-                    title=f"Benchmark Champion: {best_model}",
+                    title=f"Selected Model: {best_model}",
                     summary=summary_text,
                     plain_english=plain_text,
-                    confidence="high",
+                    confidence="moderate",
                     evidence={
                         "model": best_model,
                         "target": target_name,
                         "r2_test": r2,
                         "rmse_test": rmse,
                         "mae_test": mae,
-                        "evaluation_protocol": "80/20 train/test split with k-fold cross-validation",
+                        "evaluation_protocol": "Holdout evaluation; see model table for available training CV",
                     },
                     calculation_details="R² = 1 - (SS_res / SS_tot) evaluated strictly on test partition.",
                 )
@@ -240,19 +240,19 @@ class TemplateExplanationProvider(ExplanationProvider):
             insights.append(
                 StructuredInsight(
                     category="modeling",
-                    title=f"Benchmark Champion: {best_model}",
-                    summary=f"Achieved top balanced score (F1 = {f1:.3f}, Acc = {acc}).",
+                    title=f"Selected Model: {best_model}",
+                    summary=f"Selected candidate score (F1 = {f1:.3f}, Acc = {acc}).",
                     plain_english=(
-                        f"'{best_model}' delivered the strongest generalization performance across classes "
+                        f"'{best_model}' was evaluated on this holdout "
                         f"with a macro-averaged F1 score of {f1:.3f} and accuracy of {acc}."
                     ),
-                    confidence="high",
+                    confidence="moderate",
                     evidence={
                         "model": best_model,
                         "target": target_name,
                         "f1_macro": f1,
                         "accuracy": acc,
-                        "evaluation_protocol": "Stratified 80/20 split with stratified k-fold cross-validation",
+                        "evaluation_protocol": "Stratified holdout evaluation; see model table for available training CV",
                     },
                     calculation_details="Macro F1 = unweighted arithmetic mean of F1 scores across individual target categories.",
                 )

@@ -11,6 +11,7 @@ interface ScatterPoint {
 
 interface ClusterScatterProps {
   points: ScatterPoint[];
+  title?: string;
 }
 
 const CLUSTER_COLORS = [
@@ -22,8 +23,10 @@ const CLUSTER_COLORS = [
   "fill-cyan-500",
 ];
 
-export function ClusterScatterChart({ points }: ClusterScatterProps) {
+export function ClusterScatterChart({ points, title = "2D PCA Cluster Projection" }: ClusterScatterProps) {
   const [hoveredPt, setHoveredPt] = useState<ScatterPoint | null>(null);
+
+  points = (points || []).filter(p => Number.isFinite(p.pca_x) && Number.isFinite(p.pca_y));
 
   if (!points || points.length === 0) {
     return <div className="text-sm text-slate-400 py-6 text-center">No cluster projection coordinates.</div>;
@@ -53,8 +56,8 @@ export function ClusterScatterChart({ points }: ClusterScatterProps) {
 
   return (
     <div className="bg-slate-900/60 border border-slate-800 rounded-lg p-4 flex flex-col items-center">
-      <div className="w-full flex items-center justify-between mb-2">
-        <h5 className="text-xs font-semibold text-slate-200">2D PCA Cluster Projection</h5>
+      <div className="w-full flex flex-wrap items-center justify-between gap-2 mb-2">
+        <h5 className="text-xs font-semibold text-slate-200">{title}</h5>
         {hoveredPt && (
           <span className="text-[11px] font-medium text-slate-300">
             {hoveredPt.cluster_label} &bull; ({hoveredPt.pca_x}, {hoveredPt.pca_y})
@@ -62,8 +65,8 @@ export function ClusterScatterChart({ points }: ClusterScatterProps) {
         )}
       </div>
 
-      <div className="relative">
-        <svg width={width} height={height} className="overflow-visible">
+      <div className="relative w-full max-w-[280px]">
+        <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="ClusterScatterChart" className="w-full max-w-[280px] h-auto">
           {/* Axis border */}
           <line
             x1={padding}

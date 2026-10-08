@@ -10,6 +10,8 @@ from sklearn.impute import SimpleImputer
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
+from app.core.config import settings
+
 
 @dataclass
 class ClusterProfile:
@@ -44,6 +46,9 @@ class ClusteringSuiteResult:
     kmeans_result: ClusterResult
     dbscan_result: ClusterResult | None
     summary_insight: str
+    original_rows: int
+    excluded_missing_rows: int
+    sampling_note: str
 
 
 def run_clustering_suite(
@@ -51,7 +56,11 @@ def run_clustering_suite(
 ) -> ClusteringSuiteResult | None:
     """Executes K-Means with silhouette selection, DBSCAN, and 2D PCA visual projections."""
     # Ensure clean numeric data
+    numerical_cols = [c for c in numerical_cols if df[c].nunique() > 1]
     clean_num = df[numerical_cols].dropna()
+    excluded_missing = len(df) - len(clean_num)
+    if len(clean_num) > settings.MAX_CLUSTER_ROWS:
+        clean_num = clean_num.sample(settings.MAX_CLUSTER_ROWS, random_state=42)
     if len(clean_num) < 15 or len(numerical_cols) < 2:
         return None
 
@@ -61,13 +70,15 @@ def run_clustering_suite(
     x_raw = imputer.fit_transform(clean_num)
     x_scaled = scaler.fit_transform(x_raw)
     n_samples = len(x_scaled)
+    if len(np.unique(x_scaled, axis=0)) < 3:
+        return None
 
     # 2D PCA for visualization coordinates
     pca = PCA(n_components=2, random_state=42)
     x_pca = pca.fit_transform(x_scaled)
 
     # 1. K-Means: Evaluate k from 2 to min(6, n_samples - 1)
-    max_k = min(6, n_samples - 1)
+    max_k = min(6, n_samples - 1, len(np.unique(x_scaled, axis=0)))
     best_k = 2
     best_sil = -1.0
     best_labels = None
@@ -86,10 +97,7 @@ def run_clustering_suite(
             continue
 
     if best_labels is None:
-        km = KMeans(n_clusters=2, random_state=42, n_init=10)
-        best_labels = km.fit_predict(x_scaled)
-        best_k = 2
-        best_sil = 0.0
+        return None
 
     # Build K-Means Cluster Profiles
     km_profiles: list[ClusterProfile] = []
@@ -112,7 +120,7 @@ def run_clustering_suite(
         )
 
     # Subsample 2D points for UI visualization
-    sub_step = max(1, n_samples // 120)
+    sub_step = max(1, int(np.ceil(n_samples / 120)))
     km_scatter: list[dict[str, float | int | str]] = []
     for i in range(0, n_samples, sub_step):
         km_scatter.append(
@@ -127,7 +135,7 @@ def run_clustering_suite(
     km_result = ClusterResult(
         algorithm_name="K-Means",
         num_clusters=best_k,
-        silhouette=round(best_sil, 4) if best_sil >= 0 else None,
+        silhouette=round(best_sil, 4),
         cluster_profiles=km_profiles,
         noise_count=0,
         scatter_2d=km_scatter,
@@ -203,9 +211,11 @@ def run_clustering_suite(
         dbscan_result = None
 
     summary = (
-        f"K-Means identified k={best_k} optimal potential segments (Silhouette = {best_sil:.3f}). "
+        f"K-Means selected k={best_k} potential segments from the tested cluster counts (Silhouette = {best_sil:.3f}). "
         "Segments represent empirical cluster boundaries rather than inherent domain archetypes."
     )
+
+    summary += " Low or negative silhouette scores indicate weak separation; these candidate segments require domain validation."
 
     return ClusteringSuiteResult(
         features_used=numerical_cols,
@@ -214,4 +224,6 @@ def run_clustering_suite(
         kmeans_result=km_result,
         dbscan_result=dbscan_result,
         summary_insight=summary,
+        original_rows=len(df), excluded_missing_rows=excluded_missing,
+        sampling_note=f"{n_samples} complete observations used; deterministic sampling limit {settings.MAX_CLUSTER_ROWS}. Cluster sizes refer to this analysis subset.",
     )

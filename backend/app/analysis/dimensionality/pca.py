@@ -8,6 +8,8 @@ from sklearn.decomposition import PCA
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 
+from app.core.config import settings
+
 
 @dataclass
 class PCALoading:
@@ -28,11 +30,17 @@ class PCAResult:
     loadings: list[PCALoading]
     points_2d: list[dict[str, float]]
     summary: str
+    sample_count: int
+    excluded_missing_rows: int
 
 
 def compute_pca(df: pd.DataFrame, numerical_cols: list[str]) -> PCAResult | None:
     """Executes 2-component PCA on scaled numerical columns."""
+    numerical_cols = [c for c in numerical_cols if df[c].nunique() > 1]
     clean = df[numerical_cols].dropna()
+    excluded_missing = len(df) - len(clean)
+    if len(clean) > settings.MAX_MODEL_ROWS:
+        clean = clean.sample(settings.MAX_MODEL_ROWS, random_state=42)
     if len(clean) < 10 or len(numerical_cols) < 2:
         return None
 
@@ -63,7 +71,7 @@ def compute_pca(df: pd.DataFrame, numerical_cols: list[str]) -> PCAResult | None
     loadings.sort(key=lambda x: abs(x.pc1_loading), reverse=True)
 
     # Subsample 2D points (max 100 points)
-    step = max(1, len(coords) // 100)
+    step = max(1, int(np.ceil(len(coords) / 100)))
     points: list[dict[str, float]] = []
     for i in range(0, len(coords), step):
         points.append(
@@ -86,4 +94,5 @@ def compute_pca(df: pd.DataFrame, numerical_cols: list[str]) -> PCAResult | None
         loadings=loadings,
         points_2d=points,
         summary=summary,
+        sample_count=len(clean), excluded_missing_rows=excluded_missing,
     )

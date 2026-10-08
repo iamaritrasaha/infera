@@ -2,8 +2,8 @@
 
 import React, { useRef, useState } from "react";
 import { UploadResponse } from "@/lib/types";
-import { uploadDatasetFile } from "@/lib/api";
-import { AlertCircle, FileUp, Loader2, UploadCloud } from "lucide-react";
+import { uploadDatasetFile, errorMessage } from "@/lib/api";
+import { AlertCircle, Loader2, UploadCloud } from "lucide-react";
 
 interface UploadZoneProps {
   onUploadSuccess: (res: UploadResponse) => void;
@@ -16,13 +16,14 @@ export function UploadZone({ onUploadSuccess }: UploadZoneProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = async (file: File) => {
+    if (isUploading) return;
     setErrorMsg(null);
     setIsUploading(true);
     try {
       const result = await uploadDatasetFile(file);
       onUploadSuccess(result);
-    } catch (err: any) {
-      setErrorMsg(err.message || "Failed to upload and parse dataset");
+    } catch (err) {
+      setErrorMsg(errorMessage(err));
     } finally {
       setIsUploading(false);
     }
@@ -45,7 +46,12 @@ export function UploadZone({ onUploadSuccess }: UploadZoneProps) {
         }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={onDrop}
-        onClick={() => fileInputRef.current?.click()}
+        role="button"
+        tabIndex={0}
+        aria-label="Upload dataset"
+        aria-disabled={isUploading}
+        onKeyDown={(e) => { if (!isUploading && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); fileInputRef.current?.click(); } }}
+        onClick={() => { if (!isUploading) fileInputRef.current?.click(); }}
         className={`border-2 border-dashed rounded-2xl p-8 sm:p-12 text-center cursor-pointer transition-all duration-200 ${
           isDragging
             ? "border-blue-500 bg-blue-500/10 scale-[1.01]"
@@ -55,11 +61,14 @@ export function UploadZone({ onUploadSuccess }: UploadZoneProps) {
         <input
           ref={fileInputRef}
           type="file"
+          aria-label="Dataset file"
+          disabled={isUploading}
           accept=".csv,.xlsx,.json,.parquet"
           className="hidden"
           onChange={(e) => {
             if (e.target.files && e.target.files.length > 0) {
               handleFile(e.target.files[0]);
+              e.target.value = "";
             }
           }}
         />
@@ -84,13 +93,13 @@ export function UploadZone({ onUploadSuccess }: UploadZoneProps) {
 
           <div className="text-[11px] text-slate-500 pt-2 flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
-            Data is parsed temporarily in-memory and discarded upon analysis completion.
+            Datasets expire after one hour of inactivity or a server restart. Processing uses temporary memory and upload buffers.
           </div>
         </div>
       </div>
 
       {errorMsg && (
-        <div className="mt-3 p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg flex items-center gap-2 text-xs text-rose-300">
+        <div role="alert" className="mt-3 p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg flex items-center gap-2 text-xs text-rose-300">
           <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
           <span>{errorMsg}</span>
         </div>

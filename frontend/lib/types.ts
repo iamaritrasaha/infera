@@ -36,7 +36,8 @@ export interface UploadResponse {
   health_score: number;
   columns: ColumnSummary[];
   potential_targets: PotentialTarget[];
-  preview_rows: Record<string, any>[];
+  preview_rows: Record<string, unknown>[];
+  recommended_target?: string | null;
 }
 
 export interface HistogramBin {
@@ -50,18 +51,18 @@ export interface NumericalDistribution {
   column: string;
   count: number;
   null_count: number;
-  mean: number;
-  median: number;
-  std: number;
-  variance: number;
+  mean: number | null;
+  median: number | null;
+  std: number | null;
+  variance: number | null;
   min: number;
   max: number;
   q25: number;
   q75: number;
   iqr: number;
-  skewness: number;
+  skewness: number | null;
   skewness_interpretation: string;
-  kurtosis: number;
+  kurtosis: number | null;
   kurtosis_interpretation: string;
   histogram: HistogramBin[];
 }
@@ -149,13 +150,13 @@ export interface CorrelationPair {
   direction: string;
   is_statistically_significant: boolean;
   plain_english: string;
-  evidence_summary: Record<string, any>;
+  evidence_summary: Record<string, unknown>;
 }
 
 export interface CorrelationMatrix {
   columns: string[];
-  pearson_matrix: number[][];
-  spearman_matrix: number[][];
+  pearson_matrix: (number | null)[][];
+  spearman_matrix: (number | null)[][];
   top_correlations: CorrelationPair[];
   notable_negative_correlations: CorrelationPair[];
 }
@@ -180,7 +181,7 @@ export interface ProblemDetection {
   target_column: string | null;
   confidence: string;
   reason: string;
-  target_details: Record<string, any>;
+  target_details: Record<string, unknown>;
   alternative_targets: PotentialTarget[];
 }
 
@@ -191,8 +192,8 @@ export interface RegressionModelResult {
   mae_test: number;
   mse_test: number;
   rmse_test: number;
-  cv_r2_mean: number;
-  cv_r2_std: number;
+  cv_r2_mean: number | null;
+  cv_r2_std: number | null;
   is_best_model: boolean;
   feature_importances: { feature: string; importance: number; signed_coefficient?: number }[];
   predictions_vs_actual: { actual: number; predicted: number }[];
@@ -208,8 +209,8 @@ export interface ClassificationModelResult {
   f1_macro: number;
   f1_weighted: number;
   roc_auc: number | null;
-  cv_score_mean: number;
-  cv_score_std: number;
+  cv_score_mean: number | null;
+  cv_score_std: number | null;
   is_best_model: boolean;
   confusion_matrix: number[][];
   confusion_matrix_labels: string[];
@@ -225,7 +226,11 @@ export interface ModelingResult {
   imbalance_warning?: string | null;
   models: (RegressionModelResult | ClassificationModelResult)[];
   best_model_name: string;
-  summary_table: Record<string, any>[];
+  summary_table: Record<string, string | number | boolean | null>[];
+  preparation: Record<string, unknown>;
+  cv_folds: number;
+  selection_method: string;
+  failed_models: string[];
   insight: string;
 }
 
@@ -253,6 +258,7 @@ export interface ClusteringSuiteResult {
   kmeans_result: ClusterResult;
   dbscan_result: ClusterResult | null;
   summary_insight: string;
+  sampling_note: string;
 }
 
 export interface PCALoading {
@@ -267,6 +273,8 @@ export interface PCAResult {
   cumulative_variance_explained: number;
   loadings: PCALoading[];
   points_2d: { pc1: number; pc2: number }[];
+  sample_count: number;
+  excluded_missing_rows: number;
   summary: string;
 }
 
@@ -274,9 +282,9 @@ export interface TimeSeriesResult {
   datetime_column: string;
   metric_column: string;
   total_observations: number;
-  adf_statistic: number;
-  adf_p_value: number;
-  is_stationary: boolean;
+  adf_statistic: number | null;
+  adf_p_value: number | null;
+  is_stationary: boolean | null;
   critical_values: Record<string, number>;
   stationarity_interpretation: string;
   lag_autocorrelations: { lag: number; autocorrelation: number }[];
@@ -291,7 +299,7 @@ export interface StructuredInsight {
   summary: string;
   plain_english: string;
   confidence: string;
-  evidence: Record<string, any>;
+  evidence: Record<string, unknown>;
   calculation_details: string;
 }
 
@@ -345,7 +353,7 @@ export interface AnalysisResponse {
   pca: PCAResult | null;
   timeseries: TimeSeriesResult | null;
   insights: StructuredInsight[];
-  preview_rows?: Record<string, any>[];
+  preview_rows?: Record<string, unknown>[];
   reports: {
     markdown: string;
     html: string;

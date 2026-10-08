@@ -1,5 +1,6 @@
 """Dataset schema, column classification, and metadata detection."""
 
+import re
 from dataclasses import dataclass, field
 
 import pandas as pd
@@ -96,11 +97,11 @@ def _is_id_candidate(name: str, unique_count: int, total_rows: int) -> bool:
     """Check if a column is likely an identifier column."""
     name_lower = name.lower()
     id_keywords = ["id", "uuid", "guid", "code", "index", "key", "number", "no"]
-    matches_name = any(k in name_lower for k in id_keywords)
+    matches_name = any(k in re.split(r"[^a-z0-9]+", name_lower) for k in id_keywords) or name_lower.endswith("_id")
     is_unique = (total_rows > 10 and unique_count == total_rows) or (
         total_rows > 0 and (unique_count / total_rows) > 0.98
     )
-    return is_unique or (matches_name and unique_count > (total_rows * 0.7))
+    return matches_name and is_unique
 
 
 def inspect_schema(df: pd.DataFrame) -> SchemaProfile:

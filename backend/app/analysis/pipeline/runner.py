@@ -11,7 +11,7 @@ from app.analysis.clustering.runner import run_clustering_suite
 from app.analysis.dimensionality.pca import compute_pca
 from app.analysis.explanations.provider import StructuredInsight, TemplateExplanationProvider
 from app.analysis.pipeline.detector import detect_problem_type
-from app.analysis.pipeline.planner import plan_analyses
+from app.analysis.pipeline.planner import SkippedAnalysis, plan_analyses
 from app.analysis.pipeline.validator import prepare_supervised_data
 from app.analysis.profiler.cardinality import CardinalityProfile, analyze_cardinality
 from app.analysis.profiler.duplicates import DuplicateProfile, analyze_duplicates
@@ -77,7 +77,8 @@ def run_full_analysis(
 
     # 2. Descriptive Statistics & Correlations
     stats = compute_descriptive_statistics(df, schema.numerical_columns, schema.categorical_columns)
-    correlations = compute_correlations(df, schema.numerical_columns)
+    analysis_numerical = [c for c in schema.numerical_columns if c not in schema.id_columns and c not in schema.constant_columns]
+    correlations = compute_correlations(df, analysis_numerical)
 
     # 3. Problem Detection & Planning
     problem = detect_problem_type(df, schema, user_target=user_target)
@@ -86,7 +87,7 @@ def run_full_analysis(
     # 4. Hypothesis Testing
     hypothesis_tests = run_automated_hypothesis_suite(
         df=df,
-        numerical_cols=schema.numerical_columns,
+        numerical_cols=analysis_numerical,
         categorical_cols=schema.categorical_columns,
         target_col=problem.target_column,
     )
@@ -115,7 +116,7 @@ def run_full_analysis(
                 modeling_result = asdict(cls_res)
         except Exception as e:
             plan.skipped_analyses.append(
-                {"name": "ML Execution", "category": "ml", "reason": f"Execution error: {e!s}"}
+                SkippedAnalysis(name="ML Execution", category="ml", reason=str(e) if isinstance(e, ValueError) else "Model fitting failed; no metrics are reported.")
             )
 
     # 6. Unsupervised Clustering
@@ -125,13 +126,15 @@ def run_full_analysis(
             num_feats = [
                 c
                 for c in schema.numerical_columns
-                if c != problem.target_column and c not in schema.id_columns
+                if c != problem.target_column and c not in schema.id_columns and c not in schema.constant_columns
             ]
             cl_out = run_clustering_suite(df, num_feats)
             if cl_out:
                 clustering_res = asdict(cl_out)
+            else:
+                plan.skipped_analyses.append(SkippedAnalysis("Clustering", "clustering", "Requires at least 15 complete rows, two varying numerical features, and valid cluster separation."))
         except Exception:
-            pass
+            plan.skipped_analyses.append(SkippedAnalysis("Clustering", "clustering", "Clustering could not be computed for these observations."))
 
     # 7. PCA Decomposition
     pca_res = None
@@ -140,13 +143,15 @@ def run_full_analysis(
             num_feats = [
                 c
                 for c in schema.numerical_columns
-                if c != problem.target_column and c not in schema.id_columns
+                if c != problem.target_column and c not in schema.id_columns and c not in schema.constant_columns
             ]
             p_out = compute_pca(df, num_feats)
             if p_out:
                 pca_res = asdict(p_out)
+            else:
+                plan.skipped_analyses.append(SkippedAnalysis("PCA", "dimensionality", "Requires at least 10 complete rows and two varying numerical features."))
         except Exception:
-            pass
+            plan.skipped_analyses.append(SkippedAnalysis("PCA", "dimensionality", "PCA could not be computed for these observations."))
 
     # 8. Time Series Diagnostic
     ts_res = None
@@ -155,8 +160,10 @@ def run_full_analysis(
             ts_out = analyze_timeseries(df, schema.datetime_columns[0], problem.target_column)
             if ts_out:
                 ts_res = asdict(ts_out)
+            else:
+                plan.skipped_analyses.append(SkippedAnalysis("Time Series", "timeseries", "Requires at least 15 observations with valid timestamps and numerical values."))
         except Exception:
-            pass
+            plan.skipped_analyses.append(SkippedAnalysis("Time Series", "timeseries", "Time-series diagnostics could not be computed."))
 
     # 9. Evidence-Backed Explanations & Insights
     provider = TemplateExplanationProvider()
@@ -219,15 +226,16 @@ def run_full_analysis(
         "pca": pca_res,
         "timeseries": ts_res,
         "insights": [asdict(i) for i in insights],
-        "preview_rows": df.head(10).fillna("").to_dict(orient="records"),
+        "preview_rows": df.head(10).to_dict(orient="records"),
     }
 
+    from app.core.serialization import sanitize_for_json
+
+    payload = sanitize_for_json(payload)
     # Generate Reports
     payload["reports"] = {
         "markdown": generate_markdown_report(payload),
         "html": generate_html_report(payload),
     }
 
-    from app.core.serialization import sanitize_for_json
-
-    return sanitize_for_json(payload)
+    return payload

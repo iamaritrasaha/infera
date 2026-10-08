@@ -6,7 +6,10 @@ FROM python:3.12-slim
 # Prevent Python from writing .pyc files and enable unbuffered logging
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PORT=8000
+    PORT=8000 \
+    OMP_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1
 
 WORKDIR /app
 
@@ -21,13 +24,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=ghcr.io/astral-sh/uv:0.12.22 /uv /usr/local/bin/uv
 
 # Copy project specification files
-COPY backend/pyproject.toml backend/README.md ./
+COPY backend/pyproject.toml backend/README.md backend/requirements.txt backend/requirements.lock ./
+COPY backend/app/ ./app/
 
 # Install dependencies into system environment
-RUN uv pip install --system --no-cache .
+RUN uv pip install --system --no-cache -r requirements.txt && uv pip install --system --no-cache --no-deps .
 
 # Copy application code and sample datasets
-COPY backend/app/ ./app/
 COPY sample_data/ /app/sample_data/
 
 # Run as non-root user for security
