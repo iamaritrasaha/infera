@@ -1,15 +1,17 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const remoteBase = process.env.INFERA_E2E_BASE_URL;
+
 export default defineConfig({
   testDir: "./tests",
   fullyParallel: false,
   workers: 1,
   timeout: 180_000,
   expect: { timeout: 15_000 },
-  reporter: [["list"], ["html", { open: "never" }]],
-  use: { baseURL: "http://127.0.0.1:3100", trace: "retain-on-failure", screenshot: "only-on-failure" },
+  reporter: [["list"], ["html", { open: "never" }], ["json", { outputFile: remoteBase ? "test-results/production-results.json" : "test-results/local-results.json" }]],
+  use: { baseURL: remoteBase || "http://127.0.0.1:3100", trace: "retain-on-failure", screenshot: "only-on-failure" },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
-  webServer: [
+  webServer: remoteBase ? undefined : [
     {
       command: "../backend/.venv/bin/python -m uvicorn app.main:app --app-dir ../backend --host 127.0.0.1 --port 8001",
       url: "http://127.0.0.1:8001/health",

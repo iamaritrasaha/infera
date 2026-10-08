@@ -10,6 +10,14 @@ I built Infera to make statistical analysis and machine learning accessible with
 
 > Infera doesn't guess. It computes, validates, and explains.
 
+## Live application
+
+- Frontend: https://infera-omega.vercel.app
+- Python API: https://infera-backend-tjg3.onrender.com
+- API health: https://infera-backend-tjg3.onrender.com/health
+
+The production site is publicly accessible and uses Render Free with the existing Vercel Hobby frontend. Live browser workflows, including CSV/Excel uploads and session isolation, have been verified. See [PRODUCTION_VERIFICATION.md](PRODUCTION_VERIFICATION.md) for evidence and limits.
+
 ## Available analysis
 
 - Schema inference, missing values, duplicate records, identifier heuristics, cardinality, and IQR/Z-score outlier diagnostics.
@@ -40,7 +48,7 @@ All computation runs in the backend. The frontend does not require a paid API, e
 | --- | --- |
 | `frontend/app`, `frontend/components` | Pages, dataset workspace, charts, analysis tabs |
 | `frontend/lib` | API client, TypeScript types, runtime response validation |
-| `frontend/tests` | Playwright tests against the real local API |
+| `frontend/tests` | Playwright tests against the real local or deployed API |
 | `backend/app/api` | Upload, sample, analysis, result, report, health endpoints |
 | `backend/app/analysis` | Profiling, statistics, modeling, insights, reports |
 | `backend/app/core`, `backend/app/services` | Configuration, stream limits, session ownership, caches |
@@ -136,6 +144,16 @@ npm run test:e2e
 
 Tests cover sample selection, CSV upload/drag-and-drop, analysis tabs, regression/classification, PCA/clustering/time-series views, evidence drawers, report downloads, error/retry states, browser errors, and widths 375/768/1366/1920. Expected error simulations are separate from workflows using the real API. [AUDIT.md](AUDIT.md) records executed checks and unresolved infrastructure limitations.
 
+To test the deployed application without starting local servers, run from `frontend/`:
+
+```bash
+INFERA_E2E_BASE_URL=https://infera-omega.vercel.app \
+INFERA_E2E_API_URL=https://infera-backend-tjg3.onrender.com \
+npm run test:e2e -- --output=test-results/production
+```
+
+These tests create temporary datasets from synthetic examples and generated fixtures. Run them serially on Render Free; do not point the suite at another deployment without authorization. The suite records browser errors and checks that API requests use the expected backend origin.
+
 ## Docker and free deployment
 
 ```bash
@@ -144,7 +162,7 @@ docker compose up --build
 
 Open `http://localhost:3000`; the API is at `http://localhost:8000`. The browser-facing API URL is injected through the frontend Docker **build argument**, not a runtime environment variable. For another hostname, change the build argument and allowed backend origins before rebuilding.
 
-The intended free architecture is Vercel Hobby for Next.js plus Render Free for FastAPI. See [DEPLOYMENT.md](DEPLOYMENT.md) for exact setup and verification. At the time of the audit, the frontend existed but was protected by Vercel Authentication, had no API URL configured, and the creator confirmed the Render backend was **not deployed**.
+The deployed free architecture is Vercel Hobby for Next.js plus Render Free for FastAPI. The stable frontend is public and connects to the verified backend origin. See [DEPLOYMENT.md](DEPLOYMENT.md) for settings and [PRODUCTION_VERIFICATION.md](PRODUCTION_VERIFICATION.md) for real browser results, session-isolation evidence, and remaining free-tier limitations.
 
 Free service quotas, cold starts, and resource limits apply. Parser and native scientific-library allocations can exceed retained cache sizes, so these limits are safeguards rather than a guarantee of staying below a hosting memory cap. Anonymous concurrency limits are not distributed rate limiting or protection against sustained abuse. Docker execution and production analysis require verification on their actual infrastructure.
 

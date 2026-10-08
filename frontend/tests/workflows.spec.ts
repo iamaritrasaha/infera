@@ -116,6 +116,59 @@ test("real drag and drop CSV and keyboard upload access", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "dropped", exact: true })).toBeVisible();
 });
 
+test("real Excel upload, computed statistics, models and HTML report", async ({ page }) => {
+  await page.goto("/dashboard");
+  await page.getByLabel("Dataset file").setInputFiles("tests/fixtures/upload.xlsx");
+  await page.getByLabel("Analysis target", { exact: true }).selectOption("target");
+  await page.getByRole("button", { name: "Launch Full Analysis" }).click();
+  await expect(page.getByRole("tab", { name: "Statistics", exact: true })).toBeVisible({ timeout: 150_000 });
+  await page.getByRole("tab", { name: "Statistics", exact: true }).click();
+  await expect(page.getByRole("tabpanel")).toContainText("measurement");
+  await expect(page.getByRole("tabpanel")).toContainText("-0.5");
+  await page.getByRole("tab", { name: "Machine Learning", exact: true }).click();
+  await expect(page.getByRole("tabpanel")).toContainText("Dummy Regressor");
+  await expect(page.getByRole("tabpanel")).toContainText("RMSE");
+  await page.getByRole("tab", { name: "Report", exact: true }).click();
+  const pending = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download .HTML", exact: true }).click();
+  const content = await fs.readFile((await (await pending).path())!, "utf8");
+  expect(content).toContain("Aritra Saha");
+  expect(content).toContain("measurement");
+  await noOverflow(page);
+});
+
+test("error: independent browser sessions cannot access another dataset", async ({ page, browser }) => {
+  await page.goto("/dashboard");
+  const analysisRequest = page.waitForRequest(request => request.url().endsWith("/api/analyze") && request.method() === "POST");
+  await page.getByLabel("Dataset file").setInputFiles({ name: "owner.csv", mimeType: "text/csv", buffer: Buffer.from(csv) });
+  await page.getByLabel("Analysis target", { exact: true }).selectOption("target");
+  await page.getByRole("button", { name: "Launch Full Analysis" }).click();
+  const request = await analysisRequest;
+  const api = new URL(request.url()).origin;
+  expect(api).toBe(process.env.INFERA_E2E_API_URL || "http://127.0.0.1:8001");
+  const datasetId = request.postDataJSON().dataset_id;
+  await expect(page.getByRole("tab", { name: "Overview", exact: true })).toBeVisible({ timeout: 150_000 });
+  const other = await browser.newContext({ baseURL: process.env.INFERA_E2E_BASE_URL || "http://127.0.0.1:3100" });
+  try {
+    const second = await other.newPage();
+    await second.goto("/dashboard");
+    await second.getByLabel("Dataset file").setInputFiles({ name: "other.csv", mimeType: "text/csv", buffer: Buffer.from(csv) });
+    await expect(second.getByRole("button", { name: "Launch Full Analysis" })).toBeVisible();
+    const denied = await second.evaluate(async ({ api, datasetId }) => {
+      const headers = { "X-Infera-Session": sessionStorage.getItem("infera-session")!, "Content-Type": "application/json" };
+      const statuses = [];
+      for (const path of [`/api/results/${datasetId}`, `/api/results/${datasetId}/report?format=html`, "/api/analyze"]) {
+        const response = await fetch(api + path, { headers, method: path === "/api/analyze" ? "POST" : "GET", ...(path === "/api/analyze" ? { body: JSON.stringify({ dataset_id: datasetId, target_column: "target" }) } : {}) });
+        statuses.push(response.status);
+      }
+      return statuses;
+    }, { api, datasetId });
+    expect(denied).toEqual([404, 404, 404]);
+    const own = await page.evaluate(async ({ api, datasetId }) => (await fetch(`${api}/api/results/${datasetId}`, { headers: { "X-Infera-Session": sessionStorage.getItem("infera-session")! } })).status, { api, datasetId });
+    expect(own).toBe(200);
+  } finally { await other.close(); }
+});
+
 for (const [sample, expected] of [["Telecom Customer Churn", "Macro F1"], ["Student Exam Performance", "Macro F1"], ["Weekly Retail Sales", "Time-series Diagnostics"]]) {
   test(`real ${sample} analysis`, async ({ page }) => {
     await analyze(page, sample);

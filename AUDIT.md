@@ -2,7 +2,9 @@
 
 Created and maintained by Aritra Saha. This audit preserves the existing Python/FastAPI engine and Next.js frontend.
 
-## Verified issues, in priority order
+The subsequent connected-account deployment is recorded in [PRODUCTION_VERIFICATION.md](PRODUCTION_VERIFICATION.md). Render is now live, the frontend API variable is set, the production domain is public, and the full production browser suite passes. The findings and deployment blockers below describe the earlier audit state.
+
+## Initial verified issues, in priority order
 
 1. **Production connectivity:** Vercel has no environment variables; the client falls back to localhost in production. The creator confirmed Render is not deployed. Deployment `dpl_33bBxjkFtbpUDAT7feQj1riPC1RL` is READY at commit `4806303`, but that is not evidence of working analysis. Vercel Authentication protects the production domain.
 2. **Dataset privacy:** dataset IDs alone authorize analysis, result access, and report download. No independent session ownership check exists.
@@ -58,7 +60,7 @@ Backend tests cover all supported formats (CSV/XLSX/flat JSON/Parquet), invalid/
 
 Browser checks exercise landing/About/dashboard navigation; samples; actual CSV upload, keyboard chooser and drag-and-drop; every analysis tab; baseline/model results, PCA/clustering/time series; evidence drawers; report downloads; clipboard and printing; keyboard tab navigation; icon routes; invalid API responses; unavailable backend retry; insufficient-data explanations; and skewed, missing, constant, negative and large values. Normal workflows produced no critical console/page errors or failed network requests. Intentional failure tests simulate unavailable or invalid API responses and assess their user messages.
 
-## Deployment status and external blockers
+## Deployment status at the initial audit, before Render was connected
 
 - Deployed frontend: https://infera-omega.vercel.app. After the creator confirmed publication to main, commits `9db81d6` and `b566348` were pushed without rewriting history. Vercel deployment `dpl_DbE8Lu1Z8yum4C79mtfXPwxTapm2`, at `b566348`, is READY and aliases the production domain. Authenticated About inspection returned HTTP 200 and verified independent attribution, Open Source, matching icon references, and absence of the old badge and em dashes. Public access still requires Vercel Authentication.
 - Vercel project settings were accepted as Next.js with `frontend` root, `npm install`, `npm run build`, default output, and source files outside root disabled. The new production logs verify Next.js 16.4, successful build/output deployment, and exclusion of 71 backend files. No Python/scientific dependencies were packaged.
@@ -67,7 +69,7 @@ Browser checks exercise landing/About/dashboard navigation; samples; actual CSV 
 - GitHub social preview is prepared as `assets/infera-social-preview.png`, using the unchanged website icon. The available browser is signed out and cannot open repository settings. The README icon can be published through Git; the settings upload remains a separate manual step.
 - Docker is not installed on the audit machine. Container configuration was inspected and Python packaging tested; Docker build/run remains unverified.
 
-## Remaining issues and practical limitations
+## Limitations recorded at the initial audit
 
 1. **Production integration is blocked by missing infrastructure.** Provision Render Free, verify its real URL, set the Vercel public build variable, rebuild, and run the documented live workflow checks. Until then the live application cannot perform analysis.
 2. **Development dependency advisory:** full npm audit reports five high-severity transitive findings through `braces` / `micromatch` / `fast-glob` / the Next.js ESLint configuration. The audited `braces` release has no patched version available. A forced audit fix would downgrade Next.js rather than supply a verified repair, so it was not applied. Production npm dependencies audited clean. Track [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) and update the lint chain when a compatible fix exists.

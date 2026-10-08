@@ -4,17 +4,20 @@ Infera uses a separate Python/FastAPI backend and Next.js frontend. No paid APIs
 
 ## Verified state on 9 October 2026
 
-- Repository: [iamaritrasaha/infera](https://github.com/iamaritrasaha/infera).
-- Frontend: [infera-omega.vercel.app](https://infera-omega.vercel.app), updated production deployment READY at validated commit `b566348` after the creator confirmed pushing to main. Authenticated About inspection returned HTTP 200 and verified the updated solo attribution, badge, and icon references. Public access is protected by Vercel Authentication.
-- Updated deployment logs show a successful Next.js 16.4 build, exclusion of 71 backend files, and completed deployment. Missing backend infrastructure/configuration still prevents live analysis. Python scientific dependencies were not packaged by Vercel.
-- Vercel environment inspection returned no variables, including no `NEXT_PUBLIC_API_URL`.
-- The creator confirmed Render is **not deployed**. No backend public URL has been verified.
-- Vercel settings were updated to Next.js, `frontend` root, `npm run build` (runs `next build`), `npm install`, framework-default output directory, and no source files outside the root. The platform accepted the update; the resulting production build and authenticated HTTP response have now been verified.
-- Source changes are pushed to main and the updated frontend is live. See [AUDIT.md](AUDIT.md) for validation, deployment evidence, and remaining blockers. Backend workflows have been verified locally against real Python computation, not on Render.
+- Repository: [iamaritrasaha/infera](https://github.com/iamaritrasaha/infera), branch `main`.
+- Public frontend: [infera-omega.vercel.app](https://infera-omega.vercel.app). Anonymous requests return HTTP 200, and real browser workflows use the deployed API.
+- Backend: [infera-backend-tjg3.onrender.com](https://infera-backend-tjg3.onrender.com), Render service `srv-db405tei0phs73egmstg` in the existing workspace. The running service plan is **Free**, with one Python worker. No database, disk, worker, paid API, or new paid infrastructure was created.
+- The backend installed the pinned Python dependencies and listens on `0.0.0.0:10000`, using Render's supplied `$PORT`. [GET /health](https://infera-backend-tjg3.onrender.com/health) returns HTTP 200 with `status: ok`, `project: Infera`, and version `0.1.0`.
+- Vercel Production has `NEXT_PUBLIC_API_URL=https://infera-backend-tjg3.onrender.com`. It was rebuilt after adding the variable. Next.js 16.4 builds successfully without Python files or scientific dependencies being packaged.
+- Vercel uses Standard Protection: the stable production domain is public; preview and generated deployment URLs remain protected. Anonymous Playwright checks require no bypass token or login.
+- Production CORS allows exactly `https://infera-omega.vercel.app` and the session header. An allowed preflight returned HTTP 200; an unapproved origin returned HTTP 400 without an allow-origin header.
+- Local validation: 65 backend tests and 29 frontend checks pass. Production-target validation: 29 checks pass, including 17 browser tests and 12 API client contracts. Transport-failure simulations are explicitly identified in the tests. See [PRODUCTION_VERIFICATION.md](PRODUCTION_VERIFICATION.md).
 
-## 1. Create the backend on Render Free
+## 1. Reuse the existing Render Free backend
 
-Use [Render Dashboard](https://dashboard.render.com) > New > Blueprint, connect this repository, and select the branch containing the validated changes. Review `render.yaml`, ensure the instance plan is **Free**, and apply it.
+Use the existing [Render service](https://dashboard.render.com/web/srv-db405tei0phs73egmstg). It automatically deploys GitHub `main`. Do not create a duplicate service for this deployment.
+
+`render.yaml` remains the reproducible configuration for a future Blueprint deployment. If intentionally recreating the infrastructure, use Render Dashboard > New > Blueprint, review the file, and verify the instance plan is **Free** before applying it. The connected service was created directly with the same runtime, build/start commands, resource variables, and production CORS.
 
 For a manual Web Service use these same settings:
 
@@ -27,6 +30,8 @@ For a manual Web Service use these same settings:
 | Health check | `/health` |
 | Python version | `3.12.3` as audited; retest before changing |
 | Instance | Free |
+
+The direct-creation connector does not expose the HTTP health-check-path setting, and the signed-out browser cannot edit the Dashboard. Render’s default readiness check successfully made this service live; `/health` is independently verified over HTTPS. To align the platform HTTP check with the Blueprint, set Health Check Path to `/health` in the service settings when Dashboard access is available. This does not require a paid plan.
 
 The root directory matters: the sample catalog reads the repository's `sample_data/` directory. Do not restrict the service checkout to `backend/`. Render supplies `PORT`; do not override it with a fixed local port.
 
@@ -64,7 +69,7 @@ Add `NEXT_PUBLIC_API_URL` to Production and any Preview environments you intend 
 
 Redeploy the validated Git commit after setting the variable. Next.js embeds it during the build; changing a runtime variable alone does not repair an existing bundle. Read deployment logs and confirm no Python build or scientific dependencies appear.
 
-Production currently requires Vercel Authentication. If the site is meant to be publicly accessible, review Project Settings > Deployment Protection and choose the intended access policy. The audit did not silently disable that account setting.
+The production domain is now public under Standard Protection, as requested. Keep the preview/generated URL protection policy unless intentionally changing it. The Vercel project API setting is `ssoProtection.deploymentType = prod_deployment_urls_and_all_previews`. [Vercel Authentication documentation](https://vercel.com/docs/deployment-protection/methods-to-protect-deployments/vercel-authentication) describes this policy.
 
 For a preview domain, add that exact origin to Render's `CORS_ORIGINS` only if it should access datasets. Avoid a wildcard. Production needs only the deployed production origin; local development origins can be configured separately.
 
@@ -104,7 +109,7 @@ Backend settings accept comma-separated or JSON-array CORS origins. `backend/.en
 
 Render Free can sleep after inactivity and restart without retaining datasets. A cold start may take around a minute; the UI explains that the engine may be starting or unavailable and provides a safe retry. Caches are temporary, bounded, and process-local. Use one Uvicorn worker, because multiple workers would not share sessions or result caches.
 
-Vercel and Render free service terms/quotas apply. These limits reduce resource use but cannot guarantee an entire scientific Python process stays within the free instance's memory allowance. No production load test has been run while Render remains absent. [Render free-service documentation](https://render.com/docs/free) describes current platform limits.
+Vercel and Render free service terms/quotas apply. Billing settings and payment methods were not changed. Keep usage within included bandwidth and build minutes for a strict ₹0 budget; account-level automatic overage settings are separate from selecting the Free service plan. The default Starter build pipeline is distinct from a paid Starter web-service compute plan and includes monthly minutes on Hobby workspaces. [Render build pipeline documentation](https://render.com/docs/build-pipeline) explains included minutes and overages. These limits reduce resource use but cannot guarantee an entire scientific Python process stays within the free instance's memory allowance. The production browser suite has run on Render Free. Sampled memory during verification peaked at approximately 197.5 MiB against a 512 MiB limit. This is a one-minute monitoring sample, not a measured instantaneous peak or a large-dataset stress test. [Render free-service documentation](https://render.com/docs/free) describes current platform limits.
 
 ## Docker
 
