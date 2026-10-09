@@ -200,10 +200,8 @@ test("live: production CSV exploration, filtered reports, and session isolation"
     buffer: Buffer.from(csv),
   });
   const uploadResponse = await uploadResponsePromise;
-  expect(uploadResponse.status()).toBe(200);
+  expect(uploadResponse.status()).toBe(201);
   const uploadLatencyMs = Date.now() - uploadStarted;
-  const uploadPayload = await uploadResponse.json() as { dataset_id: string };
-  expect(uploadPayload.dataset_id).toBeTruthy();
   const expectedApiOrigin = process.env.INFERA_E2E_API_URL ?? "https://infera-backend-tjg3.onrender.com";
   expect(new URL(uploadResponse.url()).origin).toBe(expectedApiOrigin);
 
@@ -215,6 +213,8 @@ test("live: production CSV exploration, filtered reports, and session isolation"
   const analysisResponse = await analysisResponsePromise;
   expect(analysisResponse.status()).toBe(200);
   const analysisLatencyMs = Date.now() - analysisStarted;
+  const analysisRequest = analysisResponse.request().postDataJSON() as { dataset_id: string };
+  expect(analysisRequest.dataset_id).toBeTruthy();
   await expect(page.getByRole("heading", { name: "What this data contains" })).toBeVisible({ timeout: 150_000 });
 
   // The configured CORS policy admits this browser request, but an unrelated
@@ -225,7 +225,7 @@ test("live: production CSV exploration, filtered reports, and session isolation"
       credentials: "omit",
     });
     return response.status;
-  }, { apiOrigin: expectedApiOrigin, datasetId: uploadPayload.dataset_id });
+  }, { apiOrigin: expectedApiOrigin, datasetId: analysisRequest.dataset_id });
   expect(foreignSessionStatus).toBe(404);
 
   await page.getByRole("tab", { name: "Explore", exact: true }).click();
@@ -260,6 +260,7 @@ test("live: production CSV exploration, filtered reports, and session isolation"
   const filterLatencyMs = Date.now() - filterStarted;
   await expect(page.getByText(/20 of 40 rows matched the filters/)).toBeVisible();
   await expect(groupTable).toContainText("19.5");
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
     path: path.join(ARTIFACTS_DIR, "6-interactive-explorer-filtered.png"),
     fullPage: true,
@@ -273,23 +274,6 @@ test("live: production CSV exploration, filtered reports, and session isolation"
   expect(aggregateCsv).toContain('"north","19.5","20"');
   expect(aggregateCsv.trim().split(/\r?\n/)).toHaveLength(2);
 
-  await page.getByRole("tab", { name: "Report", exact: true }).click();
-  await expect(page.locator(".evidence-report pre")).toContainText("Interactive exploration");
-  await expect(page.locator(".evidence-report pre")).toContainText("20 of 40 matched the filters");
-  const [htmlReport] = await Promise.all([
-    page.waitForEvent("download"),
-    page.getByRole("button", { name: "Download .HTML", exact: true }).click(),
-  ]);
-  const htmlContents = await fs.readFile((await htmlReport.path())!, "utf8");
-  expect(htmlContents).toContain("Interactive exploration");
-  expect(htmlContents).toContain("20 of 40 matched the filters");
-  expect(htmlContents).not.toContain("<script>");
-  await page.screenshot({
-    path: path.join(ARTIFACTS_DIR, "7-filtered-report.png"),
-    fullPage: true,
-  });
-
-  await page.getByRole("tab", { name: "Explore", exact: true }).click();
   const dateOptionsPromise = page.waitForResponse((response) =>
     response.url().endsWith("/api/explore/options"),
   );
@@ -309,6 +293,22 @@ test("live: production CSV exploration, filtered reports, and session isolation"
   await expect(trendTable).toContainText("2025-01-01");
   await expect(trendTable).toContainText("2025-01-20");
   await expect(trendTable.locator("tbody tr")).toHaveCount(20);
+
+  await page.getByRole("tab", { name: "Report", exact: true }).click();
+  await expect(page.locator(".evidence-report pre")).toContainText("Interactive exploration");
+  await expect(page.locator(".evidence-report pre")).toContainText("20 of 40 matched the filters");
+  const [htmlReport] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Download .HTML", exact: true }).click(),
+  ]);
+  const htmlContents = await fs.readFile((await htmlReport.path())!, "utf8");
+  expect(htmlContents).toContain("Interactive exploration");
+  expect(htmlContents).toContain("20 of 40 matched the filters");
+  expect(htmlContents).not.toContain("<script>");
+  await page.screenshot({
+    path: path.join(ARTIFACTS_DIR, "7-filtered-report.png"),
+    fullPage: true,
+  });
 
   expect(runtimeErrors).toEqual([]);
   await fs.writeFile(

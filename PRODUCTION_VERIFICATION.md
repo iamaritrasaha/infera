@@ -1,4 +1,26 @@
-# Infera v0.4.0 Production Verification Report
+# Infera Production Verification
+
+## Current release: v0.5.0 (verified 9 October 2026, Asia/Kolkata)
+
+Application code commit `2b2f8ff787d9315045bfd38c747427a66229d982` is deployed on the public Vercel and Render services. The GitHub Actions run [37945542647](https://github.com/iamaritrasaha/infera/actions/runs/37945542647) passed its backend and frontend jobs.
+
+| Component | Production evidence |
+| --- | --- |
+| Frontend | [infera-omega.vercel.app](https://infera-omega.vercel.app) returned HTTP 200. Vercel production deployment `6963386420`, status `19524554203`, succeeded. |
+| Backend | [infera-backend-tjg3.onrender.com/health](https://infera-backend-tjg3.onrender.com/health) returned HTTP 200, version `0.5.0`, engine `ready`. Render deployment `dep-db4fo6oae00c73a2nkhg` is Live on service `srv-db405tei0phs73egmstg`. |
+| Browser workflow | Production Playwright suite: 2 passed in 33.4 seconds, including the existing housing analysis/recovery workflow and a synthetic CSV exploration workflow. |
+
+The live v0.5 workflow used a generated 40-row CSV. Upload returned HTTP 201 and analysis HTTP 200. It confirmed a northern-region filter returns 20 of 40 rows, grouped median calculations match expected values, aggregate CSV is limited to the selected region, daily trend covers January 1–20, and Markdown/HTML reports include the active filters and computed result. A foreign session token received HTTP 404 for the protected dataset results. No browser page errors were observed.
+
+One warm production run measured upload at 725 ms, analysis at 1,412 ms, grouping at 683 ms, filtering at 674 ms, and trend calculation at 748 ms. These are single-sample timings rather than P95 or load-test results; Render Free cold-start time remains variable. The full timing record is [`production-timings.json`](docs/release-evidence/v0.5.0/production-timings.json).
+
+Evidence screenshots: [live filtered explorer](docs/release-evidence/v0.5.0/after-explorer.png), [before/after release report](V0.5.0_RELEASE_REPORT.md). Full browser captures are under `artifacts/production-verification/`.
+
+---
+
+## Historical v0.4.0 production verification (9 October 2026)
+
+The following records the previous release and its measurements. Its SHAs, version `0.4.0` health payload, and screenshots are historical and are not the current production deployment.
 
 Verified 9 October 2026 (Asia/Kolkata). Independently developed and maintained by Aritra Saha.
 Philosophy: "Infera doesn't guess. It computes, validates, and explains."
