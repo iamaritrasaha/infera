@@ -15,7 +15,11 @@ Infera uses a separate Python/FastAPI backend and Next.js frontend. No paid APIs
 
 ## 1. Reuse the existing Render Free backend
 
-Use the existing [Render service](https://dashboard.render.com/web/srv-db405tei0phs73egmstg). It automatically deploys GitHub `main`. Do not create a duplicate service for this deployment.
+Use the existing [Render service](https://dashboard.render.com/web/srv-db405tei0phs73egmstg). It builds GitHub `main` from a public repository URL. This connection requires a manual deploy: no deployment appeared after the verified push, despite the API's auto-deploy flag. Do not create a duplicate service for this deployment.
+
+For subsequent backend updates, push the verified changes, open the existing service's Deploys page, and select **Manual Deploy > Deploy latest commit**. Inspect the deployed commit and logs, then verify `/health` and an actual analysis. [Render's deploy documentation](https://render.com/docs/deploys) confirms that public repository URLs require manual deployment until Git provider credentials are connected.
+
+To enable automatic backend deployment, sign in to Render Dashboard, connect the GitHub account under Account Settings > Git Deployment Credentials, grant the Render GitHub app access to `iamaritrasaha/infera`, and select those credentials under the existing service's Settings > Git Credentials. Keep branch `main`, Auto-Deploy On Commit, and instance **Free**. Verify the next push actually creates a deploy before relying on automation. This account authorization cannot be completed through the available connector; the browser is currently signed out. Vercel already deploys pushes to `main` automatically.
 
 `render.yaml` remains the reproducible configuration for a future Blueprint deployment. If intentionally recreating the infrastructure, use Render Dashboard > New > Blueprint, review the file, and verify the instance plan is **Free** before applying it. The connected service was created directly with the same runtime, build/start commands, resource variables, and production CORS.
 

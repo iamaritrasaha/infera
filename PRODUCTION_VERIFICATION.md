@@ -19,6 +19,7 @@ Verified on 9 October 2026 (Asia/Kolkata). Infera is independently created and m
 4. Vercel Authentication changed from protection of the production domain to Standard Protection. The stable domain is public; preview and generated deployment URLs remain protected. No access bypass is needed for the production tests.
 5. Production CORS was configured for exactly the frontend origin. The application uses an anonymous session header, not cross-site session cookies. Cookie credentials are omitted. The random per-tab token stays in browser session storage and never enters dataset/report URLs.
 6. Playwright now accepts an explicit deployed base URL, adds an actual Excel fixture workflow and an independent-browser ownership test, and writes local/production JSON summaries. A test observer initially attempted to read the upload response before its body was available; the corrected test obtains the dataset identifier from the actual analysis request, after the frontend has consumed and validated the upload response. This was a test timing issue, not a backend failure.
+7. A push deployed automatically on Vercel but created no Render deployment. The directly created backend uses a public repository URL without connected Git provider credentials. Render's auto-deploy flag alone does not enable push-triggered deployment for this source. The final backend revision is deployed manually through the connector; future backend updates require Manual Deploy until the Git provider is connected. See [DEPLOYMENT.md](DEPLOYMENT.md) for exact account-linking steps.
 
 ## Tests executed and results
 
@@ -71,6 +72,7 @@ The remote configuration starts no local servers. One worker keeps the tests wit
 ## Remaining limitations
 
 - Render Free sleeps and can restart. Datasets/results are temporary, process-local, and expire or can be evicted. They are not permanent user accounts or storage.
+- Render currently needs manual deployment after backend changes. Connecting GitHub credentials to the existing service requires a signed-in Dashboard session. Vercel's automatic deployment on main was observed successfully.
 - The direct-creation connector cannot set the platform HTTP health-check path. The available browser is signed out of Render, so that setting remains at its default. Render readiness succeeded and the public /health endpoint was independently tested. Set Health Check Path to /health in service settings when Dashboard access is available, to match render.yaml's recommendation.
 - Monitoring uses one-minute samples. This test is not a large-file/concurrency stress test, and does not prove every scientific native allocation remains below the memory limit.
 - Only Chromium is covered; Firefox/WebKit, physical devices, and a naturally sleeping Render cold start remain separate checks.
@@ -82,6 +84,6 @@ The remote configuration starts no local servers. One worker keeps the tests wit
 
 ## Final repository and deployment revision
 
-The reusable tests, Excel fixture, and deployment records are committed and pushed after verification. They do not alter the application computation or UI source from the fully tested revision. The final Git hash and post-push deployment checks are recorded in the task's final response, rather than a self-referencing document hash. Both platforms follow main automatically; the final checks wait for their matching deploys and rerun the critical workflow after restart.
+The reusable tests, Excel fixture, and deployment records are committed and pushed after verification. They do not alter the application computation or UI source from the fully tested revision. The final Git hash and post-push deployment checks are recorded in the task's final response, rather than a self-referencing document hash. Vercel deploys main automatically; Render's public repository source is deployed manually. Final checks verify matching revisions on both hosts and rerun the critical workflow after restart.
 
 Created and maintained by Aritra Saha. Infera doesn't guess. It computes, validates, and explains.
