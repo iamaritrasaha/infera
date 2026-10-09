@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import {
   ArrowUpRight,
   BarChart3,
@@ -89,9 +88,9 @@ export function ProductPreview() {
         )}
         <div className="preview-source">
           <span>Python-computed snapshot · Synthetic housing sample</span>
-          <Link href="/dashboard">
+          <a href="/dashboard">
             Analyze it yourself <ArrowUpRight size={13} />
-          </Link>
+          </a>
         </div>
       </div>
     </div>

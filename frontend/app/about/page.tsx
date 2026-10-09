@@ -1,4 +1,3 @@
-import Link from "next/link";
 import Image from "next/image";
 import {
   ArrowRight,
@@ -154,9 +153,9 @@ export default function AboutPage() {
               Created and developed by Aritra Saha.
             </p>
             <div className="flex flex-wrap gap-3 mt-6">
-              <Link href="/dashboard" className="button-primary">
+              <a href="/dashboard" className="button-primary">
                 Start Analyzing <ArrowRight size={16} />
-              </Link>
+              </a>
               <a
                 href="https://github.com/iamaritrasaha/infera"
                 target="_blank"

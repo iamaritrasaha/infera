@@ -91,9 +91,9 @@ export default function HomePage() {
               test, model, and explain with real Python computations.
             </p>
             <div className="hero-actions">
-              <Link href="/dashboard" className="button-primary">
+              <a href="/dashboard" className="button-primary">
                 Start Analyzing <ArrowRight size={17} />
-              </Link>
+              </a>
               <a
                 href="https://github.com/iamaritrasaha/infera"
                 target="_blank"
@@ -296,9 +296,9 @@ export default function HomePage() {
           <br />
           Bring the evidence.
         </h2>
-        <Link href="/dashboard" className="button-primary">
+        <a href="/dashboard" className="button-primary">
           Start Analyzing <ArrowRight size={17} />
-        </Link>
+        </a>
         <p>Free to use. No account required.</p>
       </section>
     </div>
