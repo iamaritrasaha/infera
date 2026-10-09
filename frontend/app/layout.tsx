@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { EngineProvider } from "@/components/EngineConnection";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 
@@ -18,7 +19,13 @@ export const metadata: Metadata = {
   authors: [{ name: "Aritra Saha", url: "https://github.com/iamaritrasaha" }],
   creator: "Aritra Saha",
   metadataBase: new URL("https://infera-omega.vercel.app"),
-  openGraph: { title: "Infera", description: "Turn data into evidence.", images: [{ url: "/infera-icon.png", width: 512, height: 512, alt: "Infera" }] },
+  openGraph: {
+    title: "Infera",
+    description: "Turn data into evidence.",
+    images: [
+      { url: "/infera-icon.png", width: 512, height: 512, alt: "Infera" },
+    ],
+  },
   twitter: { card: "summary", title: "Infera", images: ["/infera-icon.png"] },
   title: "Infera: Automated Data Science Platform | Turn Data Into Evidence",
   description:
@@ -31,12 +38,21 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}>
+    <html
+      lang="en"
+      className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
+    >
       <body className="min-h-full flex flex-col bg-slate-950 text-slate-100 selection:bg-blue-600 selection:text-white">
-        <a href="#main-content" className="skip-link">Skip to content</a>
-        <Navbar />
-        <main id="main-content" className="flex-1 min-w-0">{children}</main>
-        <Footer />
+        <a href="#main-content" className="skip-link">
+          Skip to content
+        </a>
+        <EngineProvider>
+          <Navbar />
+          <main id="main-content" className="flex-1 min-w-0">
+            {children}
+          </main>
+          <Footer />
+        </EngineProvider>
       </body>
     </html>
   );

@@ -132,3 +132,17 @@ Docker execution was unavailable on the audit machine because Docker was not ins
 The repository README displays `assets/infera-icon.svg`, the same existing mark used by the app. `assets/infera-social-preview.png` (1280 × 640, the unchanged icon centered on the existing dark background) is available for Repository Settings > General > Social preview > Edit > Upload an image. GitHub repositories have no independently configurable avatar like a user account. The available browser reached GitHub’s signed-out 404 page for repository settings, so the social preview upload is pending. [GitHub’s documented upload steps](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/customizing-your-repositorys-social-media-preview) require repository settings access; this is separate from committing the README asset. No personal GitHub avatar should be replaced as part of this task.
 
 Created and maintained by Aritra Saha.
+
+## Connection recovery and redesigned workspace
+
+The frontend shares one connection provider across navigation and the dashboard. A validated `/health` response is required before it displays `Engine connected`. Four health attempts are bounded to 25 seconds each, with 1.5/4/8-second backoff (about 114 seconds total). A four-second delay or transient failure displays `Starting the analysis engine`; malformed successful responses display a degraded compatibility error rather than a connected state. Manual retry and returning to a stale visible tab can start a new bounded check. Ordinary component rerenders do not restart the sequence. Request cancellation prevents an older check from overwriting a newer result.
+
+The landing page is statically rendered independently of backend availability. Its interactive example uses `frontend/lib/sample-preview.json`, computed from the synthetic housing CSV by the existing Python profiling functions. Regenerate it with:
+
+```bash
+backend/.venv/bin/python backend/scripts/build_preview.py
+```
+
+The preview is explicitly a computed example snapshot, not a live analysis or a performance benchmark. The existing icon, numerical computations, owner-scoped session headers, exact CORS origin allowlist, dataset limits, and report generation remain in use.
+
+Local verification uses an optimized build compiled with `NEXT_PUBLIC_API_URL=http://127.0.0.1:8001`, then `npm run test:e2e` inside `frontend`. `INFERA_E2E_BASE_URL=https://infera-omega.vercel.app npm run test:e2e` runs the same workflows against production. Fault-injection recovery tests are explicitly named `error:`; the sample/upload analysis tests use real FastAPI calculations. Do not use repeated health polling to prevent the Free service from sleeping. For an actual inactivity check, close test pages, leave the public API untouched for at least 15 minutes, and verify startup, reconnection, analysis, and report download in a fresh production browser.

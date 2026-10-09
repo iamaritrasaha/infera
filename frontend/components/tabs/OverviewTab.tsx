@@ -2,7 +2,15 @@
 
 import React, { useState } from "react";
 import { AnalysisResponse } from "@/lib/types";
-import { CheckCircle2, AlertTriangle, AlertOctagon, Database, Table, Cpu, ShieldCheck } from "lucide-react";
+import {
+  CheckCircle2,
+  AlertTriangle,
+  AlertOctagon,
+  Database,
+  Table,
+  Cpu,
+  ShieldCheck,
+} from "lucide-react";
 
 interface OverviewTabProps {
   data: AnalysisResponse;
@@ -10,18 +18,20 @@ interface OverviewTabProps {
 }
 
 export function OverviewTab({ data, onSelectTarget }: OverviewTabProps) {
-  const { schema, health_score, quality, preview_rows, problem_detection } = data;
+  const { schema, health_score, quality, preview_rows, problem_detection } =
+    data;
   const [searchTerm, setSearchTerm] = useState("");
 
-  const filteredColumns = schema.columns.filter((c) =>
-    c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.inferred_type.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredColumns = schema.columns.filter(
+    (c) =>
+      c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      c.inferred_type.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
   const getHealthBadge = (score: number) => {
     if (score >= 85) {
       return {
-        label: "Excellent Integrity",
+        label: "Few observed hygiene issues",
         color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
         icon: CheckCircle2,
       };
@@ -61,11 +71,15 @@ export function OverviewTab({ data, onSelectTarget }: OverviewTabProps) {
             <HealthIcon className="w-4 h-4 text-slate-400" />
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="text-4xl font-extrabold tracking-tight text-white">{health_score}</span>
+            <span className="text-4xl font-extrabold tracking-tight text-white">
+              {health_score}
+            </span>
             <span className="text-sm font-medium text-slate-500">/ 100</span>
           </div>
           <div className="mt-3">
-            <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border ${healthBadge.color}`}>
+            <span
+              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border ${healthBadge.color}`}
+            >
               {healthBadge.label}
             </span>
           </div>
@@ -81,7 +95,10 @@ export function OverviewTab({ data, onSelectTarget }: OverviewTabProps) {
             {schema.row_count.toLocaleString()}
           </div>
           <div className="text-xs text-slate-400 mt-2">
-            Complete rows: <strong className="text-slate-200">{quality.missing.complete_rows_percentage}%</strong>
+            Complete rows:{" "}
+            <strong className="text-slate-200">
+              {quality.missing.complete_rows_percentage}%
+            </strong>
           </div>
         </div>
 
@@ -95,21 +112,24 @@ export function OverviewTab({ data, onSelectTarget }: OverviewTabProps) {
             {schema.column_count}
           </div>
           <div className="text-xs text-slate-400 mt-2">
-            {schema.numerical_columns.length} num &bull; {schema.categorical_columns.length} cat &bull; {schema.datetime_columns.length} dt
+            {schema.numerical_columns.length} num &bull;{" "}
+            {schema.categorical_columns.length} cat &bull;{" "}
+            {schema.datetime_columns.length} dt
           </div>
         </div>
 
         {/* Memory Footprint */}
         <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-5 flex flex-col justify-between">
           <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
-            <span>Memory Footprint</span>
-            <Cpu className="w-4 h-4 text-slate-400" />
+            <span>Missing Values</span>
+            <AlertTriangle className="w-4 h-4 text-slate-400" />
           </div>
           <div className="text-3xl font-extrabold text-white">
-            {schema.memory_formatted}
+            {quality.missing.total_missing_cells.toLocaleString()}
           </div>
           <div className="text-xs text-slate-400 mt-2">
-            Processed temporarily in memory
+            {quality.duplicates.duplicate_rows_count.toLocaleString()} duplicate
+            rows · {schema.memory_formatted}
           </div>
         </div>
       </div>
@@ -130,7 +150,9 @@ export function OverviewTab({ data, onSelectTarget }: OverviewTabProps) {
                   {problem_detection.problem_type.replace("_", " ")}
                 </span>
               </div>
-              <p className="text-xs text-slate-300 mt-1">{problem_detection.reason}</p>
+              <p className="text-xs text-slate-300 mt-1">
+                {problem_detection.reason}
+              </p>
             </div>
           </div>
           {onSelectTarget && (
@@ -148,8 +170,12 @@ export function OverviewTab({ data, onSelectTarget }: OverviewTabProps) {
       <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div>
-            <h3 className="text-base font-semibold text-white">Attribute Dictionary &amp; Schema Profile</h3>
-            <p className="text-xs text-slate-400">Classified data types, null rates, and empirical uniqueness</p>
+            <h3 className="text-base font-semibold text-white">
+              Attribute Dictionary &amp; Schema Profile
+            </h3>
+            <p className="text-xs text-slate-400">
+              Classified data types, null rates, and empirical uniqueness
+            </p>
           </div>
           <input
             type="text"
@@ -176,41 +202,75 @@ export function OverviewTab({ data, onSelectTarget }: OverviewTabProps) {
             <tbody className="divide-y divide-slate-800/60">
               {filteredColumns.map((col, idx) => {
                 let badgeColor = "bg-slate-800 text-slate-300";
-                if (col.inferred_type === "numerical") badgeColor = "bg-blue-500/10 text-blue-400 border border-blue-500/20";
-                else if (col.inferred_type === "categorical") badgeColor = "bg-purple-500/10 text-purple-400 border border-purple-500/20";
-                else if (col.inferred_type === "datetime") badgeColor = "bg-amber-500/10 text-amber-400 border border-amber-500/20";
-                else if (col.inferred_type === "boolean") badgeColor = "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+                if (col.inferred_type === "numerical")
+                  badgeColor =
+                    "bg-blue-500/10 text-blue-400 border border-blue-500/20";
+                else if (col.inferred_type === "categorical")
+                  badgeColor =
+                    "bg-purple-500/10 text-purple-400 border border-purple-500/20";
+                else if (col.inferred_type === "datetime")
+                  badgeColor =
+                    "bg-amber-500/10 text-amber-400 border border-amber-500/20";
+                else if (col.inferred_type === "boolean")
+                  badgeColor =
+                    "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
 
                 return (
-                  <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
+                  <tr
+                    key={idx}
+                    className="hover:bg-slate-800/30 transition-colors"
+                  >
                     <td className="py-2.5 px-3 font-medium text-slate-200">
                       <div className="flex items-center gap-1.5">
                         <span>{col.name}</span>
                         {schema.id_columns.includes(col.name) && (
-                          <span className="px-1.5 py-0.2 rounded text-[9px] bg-slate-800 text-slate-400 border border-slate-700">ID</span>
+                          <span className="px-1.5 py-0.2 rounded text-[9px] bg-slate-800 text-slate-400 border border-slate-700">
+                            ID
+                          </span>
                         )}
                         {schema.constant_columns.includes(col.name) && (
-                          <span className="px-1.5 py-0.2 rounded text-[9px] bg-rose-950 text-rose-400 border border-rose-800">Constant</span>
+                          <span className="px-1.5 py-0.2 rounded text-[9px] bg-rose-950 text-rose-400 border border-rose-800">
+                            Constant
+                          </span>
                         )}
                       </div>
                     </td>
                     <td className="py-2.5 px-3">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${badgeColor}`}>
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-medium ${badgeColor}`}
+                      >
                         {col.inferred_type}
                       </span>
                     </td>
-                    <td className="py-2.5 px-3 font-mono text-[11px] text-slate-400">{col.dtype}</td>
+                    <td className="py-2.5 px-3 font-mono text-[11px] text-slate-400">
+                      {col.dtype}
+                    </td>
                     <td className="py-2.5 px-3">
                       <div className="flex items-center gap-2">
-                        <span className={col.null_percentage > 0 ? "text-amber-400 font-medium" : "text-slate-400"}>
+                        <span
+                          className={
+                            col.null_percentage > 0
+                              ? "text-amber-400 font-medium"
+                              : "text-slate-400"
+                          }
+                        >
                           {col.null_percentage}%
                         </span>
-                        {col.null_count > 0 && <span className="text-slate-500 text-[10px]">({col.null_count})</span>}
+                        {col.null_count > 0 && (
+                          <span className="text-slate-500 text-[10px]">
+                            ({col.null_count})
+                          </span>
+                        )}
                       </div>
                     </td>
-                    <td className="py-2.5 px-3 text-slate-300 font-mono">{col.unique_count.toLocaleString()}</td>
+                    <td className="py-2.5 px-3 text-slate-300 font-mono">
+                      {col.unique_count.toLocaleString()}
+                    </td>
                     <td className="py-2.5 px-3 text-slate-400 font-mono text-[11px] truncate max-w-xs">
-                      {col.sample_values.map((v) => (v === null ? "null" : String(v))).slice(0, 4).join(", ")}
+                      {col.sample_values
+                        .map((v) => (v === null ? "null" : String(v)))
+                        .slice(0, 4)
+                        .join(", ")}
                     </td>
                   </tr>
                 );
@@ -225,8 +285,12 @@ export function OverviewTab({ data, onSelectTarget }: OverviewTabProps) {
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5">
           <div className="flex items-center justify-between mb-3">
             <div>
-              <h3 className="text-base font-semibold text-white">Initial Record Sample</h3>
-              <p className="text-xs text-slate-400">Head observations (first {preview_rows.length} rows)</p>
+              <h3 className="text-base font-semibold text-white">
+                Initial Record Sample
+              </h3>
+              <p className="text-xs text-slate-400">
+                Head observations (first {preview_rows.length} rows)
+              </p>
             </div>
           </div>
           <div className="overflow-x-auto">
@@ -234,26 +298,34 @@ export function OverviewTab({ data, onSelectTarget }: OverviewTabProps) {
               <thead>
                 <tr className="border-b border-slate-800 text-slate-400 font-medium">
                   {Object.keys(preview_rows[0]).map((key, i) => (
-                    <th key={i} className="py-2 px-3 whitespace-nowrap bg-slate-950/40">
+                    <th
+                      key={i}
+                      className="py-2 px-3 whitespace-nowrap bg-slate-950/40"
+                    >
                       {key}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/40 font-mono text-[11px]">
-                {preview_rows.map((row: Record<string, unknown>, rIdx: number) => (
-                  <tr key={rIdx} className="hover:bg-slate-800/20">
-                    {Object.values(row).map((val: unknown, cIdx) => (
-                      <td key={cIdx} className="py-2 px-3 whitespace-nowrap text-slate-300">
-                        {val === "" || val === null || val === undefined ? (
-                          <span className="text-slate-600 italic">null</span>
-                        ) : (
-                          String(val)
-                        )}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
+                {preview_rows.map(
+                  (row: Record<string, unknown>, rIdx: number) => (
+                    <tr key={rIdx} className="hover:bg-slate-800/20">
+                      {Object.values(row).map((val: unknown, cIdx) => (
+                        <td
+                          key={cIdx}
+                          className="py-2 px-3 whitespace-nowrap text-slate-300"
+                        >
+                          {val === "" || val === null || val === undefined ? (
+                            <span className="text-slate-600 italic">null</span>
+                          ) : (
+                            String(val)
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  ),
+                )}
               </tbody>
             </table>
           </div>

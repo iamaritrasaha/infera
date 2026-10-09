@@ -33,3 +33,6 @@ Thumbs.db
 frontend/test-results/
 frontend/playwright-report/
 frontend/*.tsbuildinfo
+
+# Local screenshots, downloaded reports, and deployment verification evidence
+artifacts/

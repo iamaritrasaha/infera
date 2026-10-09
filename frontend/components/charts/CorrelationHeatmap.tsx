@@ -17,12 +17,16 @@ export function CorrelationHeatmap({ matrix }: HeatmapProps) {
   const [method, setMethod] = useState<"pearson" | "spearman">("pearson");
   const cols = matrix.columns;
   if (!cols || cols.length === 0) {
-    return <div className="text-sm text-slate-400 py-6 text-center">Insufficient numerical features for correlation matrix.</div>;
+    return (
+      <div className="text-sm text-slate-400 py-6 text-center">
+        Insufficient numerical features for correlation matrix.
+      </div>
+    );
   }
 
   // Get color for correlation value [-1, 1]
   const getColor = (r: number | null) => {
-    if (r === null) return "bg-slate-950 text-slate-500";
+    if (r === null || !Number.isFinite(r)) return "bg-slate-950 text-slate-500";
     if (r === 1.0) return "bg-blue-600 text-white font-bold";
     if (r > 0.7) return "bg-blue-700/80 text-white";
     if (r > 0.4) return "bg-blue-800/60 text-blue-100";
@@ -37,28 +41,55 @@ export function CorrelationHeatmap({ matrix }: HeatmapProps) {
     <div className="w-full bg-slate-900/60 border border-slate-800 rounded-lg p-4 overflow-x-auto">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
-          <h4 className="text-sm font-semibold text-slate-200">{method === "pearson" ? "Pearson" : "Spearman"} Correlation Matrix</h4>
-          <p className="text-xs text-slate-400">Values range from -1.0 (inverse) to +1.0 (direct)</p>
+          <h4 className="text-sm font-semibold text-slate-200">
+            {method === "pearson" ? "Pearson" : "Spearman"} Correlation Matrix
+          </h4>
+          <p className="text-xs text-slate-400">
+            Values range from -1.0 (inverse) to +1.0 (direct)
+          </p>
         </div>
         {hoveredCell && (
           <div className="text-xs bg-slate-800 px-3 py-1.5 rounded border border-slate-700">
             <span className="text-slate-300">{hoveredCell.rowCol}</span> &times;{" "}
             <span className="text-slate-300">{hoveredCell.colCol}</span>:{" "}
-            <strong className={hoveredCell.r !== null && hoveredCell.r >= 0 ? "text-blue-400" : "text-rose-400"}>
-              r = {hoveredCell.r === null ? "Unavailable" : hoveredCell.r > 0 ? `+${hoveredCell.r.toFixed(3)}` : hoveredCell.r.toFixed(3)}
+            <strong
+              className={
+                hoveredCell.r !== null && hoveredCell.r >= 0
+                  ? "text-blue-400"
+                  : "text-rose-400"
+              }
+            >
+              r ={" "}
+              {hoveredCell.r === null
+                ? "Unavailable"
+                : hoveredCell.r > 0
+                  ? `+${hoveredCell.r.toFixed(3)}`
+                  : hoveredCell.r.toFixed(3)}
             </strong>
           </div>
         )}
       </div>
 
-      <select aria-label="Correlation method" value={method} onChange={e => setMethod(e.target.value as "pearson" | "spearman")} className="mb-4 rounded border border-slate-700 bg-slate-800 px-3 py-2 text-xs"><option value="pearson">Pearson</option><option value="spearman">Spearman</option></select>
+      <select
+        aria-label="Correlation method"
+        value={method}
+        onChange={(e) => setMethod(e.target.value as "pearson" | "spearman")}
+        className="mb-4 rounded border border-slate-700 bg-slate-800 px-3 py-2 text-xs"
+      >
+        <option value="pearson">Pearson</option>
+        <option value="spearman">Spearman</option>
+      </select>
       <div className="inline-block min-w-full">
         <table className="border-collapse table-fixed text-xs">
           <thead>
             <tr>
               <th className="p-1.5 w-24"></th>
               {cols.map((c, i) => (
-                <th key={i} className="p-1.5 text-center font-medium text-slate-400 truncate max-w-[80px]" title={c}>
+                <th
+                  key={i}
+                  className="p-1.5 text-center font-medium text-slate-400 truncate max-w-[80px]"
+                  title={c}
+                >
                   {c.length > 8 ? `${c.substring(0, 7)}…` : c}
                 </th>
               ))}
@@ -67,21 +98,50 @@ export function CorrelationHeatmap({ matrix }: HeatmapProps) {
           <tbody>
             {cols.map((rowName, rIdx) => (
               <tr key={rIdx}>
-                <th className="p-1.5 text-right font-medium text-slate-400 truncate max-w-[100px]" title={rowName}>
-                  {rowName.length > 10 ? `${rowName.substring(0, 9)}…` : rowName}
+                <th
+                  className="p-1.5 text-right font-medium text-slate-400 truncate max-w-[100px]"
+                  title={rowName}
+                >
+                  {rowName.length > 10
+                    ? `${rowName.substring(0, 9)}…`
+                    : rowName}
                 </th>
                 {cols.map((colName, cIdx) => {
-                  const val = (method === "pearson" ? matrix.pearson_matrix : matrix.spearman_matrix)[rIdx]?.[cIdx] ?? null;
+                  const raw =
+                    (method === "pearson"
+                      ? matrix.pearson_matrix
+                      : matrix.spearman_matrix)[rIdx]?.[cIdx] ?? null;
+                  const val = raw !== null && Number.isFinite(raw) ? raw : null;
                   return (
                     <td
                       key={cIdx}
                       tabIndex={0}
-                      onFocus={() => setHoveredCell({ rowCol: rowName, colCol: colName, r: val })}
+                      onClick={() =>
+                        setHoveredCell({
+                          rowCol: rowName,
+                          colCol: colName,
+                          r: val,
+                        })
+                      }
+                      onBlur={() => setHoveredCell(null)}
+                      onFocus={() =>
+                        setHoveredCell({
+                          rowCol: rowName,
+                          colCol: colName,
+                          r: val,
+                        })
+                      }
                       title={`${rowName} × ${colName}: ${val ?? "Unavailable"}`}
-                      onMouseEnter={() => setHoveredCell({ rowCol: rowName, colCol: colName, r: val })}
+                      onMouseEnter={() =>
+                        setHoveredCell({
+                          rowCol: rowName,
+                          colCol: colName,
+                          r: val,
+                        })
+                      }
                       onMouseLeave={() => setHoveredCell(null)}
                       className={`p-1.5 text-center font-mono cursor-pointer transition-colors border border-slate-900/40 ${getColor(
-                        val
+                        val,
                       )}`}
                     >
                       {val === null ? "N/A" : val.toFixed(2)}
@@ -96,13 +156,16 @@ export function CorrelationHeatmap({ matrix }: HeatmapProps) {
 
       <div className="flex flex-wrap items-center justify-center gap-3 mt-4 text-xs text-slate-400 pt-3 border-t border-slate-800">
         <span className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded bg-rose-700/80 inline-block"></span> Strong Inverse (-1.0 to -0.5)
+          <span className="w-3 h-3 rounded bg-rose-700/80 inline-block"></span>{" "}
+          Negative correlation
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded bg-slate-900 inline-block border border-slate-700"></span> Uncorrelated (-0.15 to +0.15)
+          <span className="w-3 h-3 rounded bg-slate-900 inline-block border border-slate-700"></span>{" "}
+          Near zero (-0.15 to +0.15)
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded bg-blue-700/80 inline-block"></span> Strong Direct (+0.5 to +1.0)
+          <span className="w-3 h-3 rounded bg-blue-700/80 inline-block"></span>{" "}
+          Positive correlation
         </span>
       </div>
     </div>
