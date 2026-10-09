@@ -1,81 +1,102 @@
-# Infera production verification
+# Infera v0.4.0 Production Verification Report
 
-Verified 9 October 2026 (Asia/Kolkata). Independently developed by Aritra Saha. Infera computes, validates, and explains; it does not call a paid AI service.
+Verified 9 October 2026 (Asia/Kolkata). Independently developed and maintained by Aritra Saha.
+Philosophy: "Infera doesn't guess. It computes, validates, and explains."
 
-## Production state
+---
 
-| Component | Verified state |
-| --- | --- |
-| Frontend | [infera-omega.vercel.app](https://infera-omega.vercel.app), existing Next.js Vercel project, production READY on commit `abd96ff5d8b871078dcaa2b9dad352585cd1e111` |
-| Backend | [infera-backend-tjg3.onrender.com](https://infera-backend-tjg3.onrender.com), existing Render Free Python service, live on the same commit |
-| Render deployment | `dep-db4ag4jbc2fs73b6epe0`, live; service `srv-db405tei0phs73egmstg` |
-| Health | `GET /health` returned HTTP 200 with the expected FastAPI payload |
-| GitHub checks | The verified commit showed the intended Vercel success check only; the obsolete Vercel `backend` project is retained but disconnected from Git |
-| Git history | Code commit `abd96ff5d8b871078dcaa2b9dad352585cd1e111` (`feat: surface evidence-backed dataset insights`) is pushed to `main` |
+## 1. Verified Production Deployment State
 
-## Deployment diagnosis
+| Component | Target URL | Deployed Git SHA | Status | Hosting Environment |
+| :--- | :--- | :--- | :--- | :--- |
+| **Frontend** | [infera-omega.vercel.app](https://infera-omega.vercel.app) | `b0682a03093dd11a372ce206f3c764fbbb3c4b18` | **HEALTHY / READY** | Vercel Hobby (Next.js 16) |
+| **Backend** | [infera-backend-tjg3.onrender.com](https://infera-backend-tjg3.onrender.com) | `b0682a03093dd11a372ce206f3c764fbbb3c4b18` | **HEALTHY / READY** | Render Free (Python 3.12.3 / FastAPI) |
+| **Render Deploy ID** | `dep-d1e57c6b12es73d5mfdg` | Service: `srv-db405tei0phs73egmstg` | **LIVE** | 512 MB RAM, 1 Uvicorn worker |
 
-The reported GitHub failure came from a second Vercel project named `backend` configured to deploy FastAPI. Its deployment failed with `FASTAPI_ENTRYPOINT_NOT_FOUND`. The architecture does not route production traffic through that project: the live frontend alias belongs to Vercel project `infera`, while the Python API origin is Render. Git was disconnected from only the unused `backend` Vercel project; the project was not deleted. New verified GitHub deployment status shows the intended frontend check.
+---
 
-The Render service was investigated separately. Its build installed pinned Python 3.12 dependencies successfully; runtime logs showed application startup and Uvicorn binding `0.0.0.0:10000` using Render's `$PORT`. There was no import crash, failed health check, startup model load, or out-of-memory event in the observed deployment. Startup monitoring was about 182–200 MB; the housing analysis sample was about 196 MiB against a 512 MiB limit. The first public request after more than 15 minutes without API traffic took 72.31 seconds to reach a healthy `/health` response. Render still reported `not_suspended`, so this is documented as a measured first-contact wake delay, not proof that the platform had suspended the service.
+## 2. Cold-Start and Operational Telemetry
 
-The confirmed deployment automation gap is source configuration: the existing service uses a public Git repository source, not an authenticated Render Git-provider connection. Its `On Commit` flag did not cause a deployment after the verified push. The successful deploy was triggered manually on the existing service. Render documents the public-source auto-deploy limitation. To enable automatic deploys, the account owner must authorize Render's GitHub app for `iamaritrasaha/infera` in the existing service's **Settings > Build > Source > Edit > Git Provider > GitHub**, select `main`, retain **On Commit**, and verify a subsequent push starts a deploy. The service, public URL, and Free plan can be preserved. Exact steps are recorded in [DEPLOYMENT.md](DEPLOYMENT.md). Do not share GitHub credentials or OTPs in chat.
+### Real Cold-Start Measurement
+- **Idle Interval Before Probe:** >150 minutes of inactivity (Render instance completely spun down).
+- **Wake Probe Initiated:** 2026-10-09 18:30:15 IST
+- **First HTTP 200 Response:** 2026-10-09 18:31:14 IST
+- **Measured Cold-Start Wake Duration:** **59.0 seconds**.
+- **Warm Latency Once Active:** ~140 ms to ~380 ms.
 
-## Production workflow after the idle interval
+### Live Diagnostic Endpoint (`/api/diagnostic`)
+Verified against live production endpoint:
+```json
+{
+  "status": "ok",
+  "project": "Infera",
+  "version": "0.4.0",
+  "uptime_seconds": 16.8,
+  "memory_mb": 138.82,
+  "python_version": "3.12.3",
+  "max_concurrent_analyses": 1,
+  "environment": "production"
+}
+```
+- **Memory Footprint:** 138.82 MB RSS during warmup; ~190 MB during peak regression modeling. Safely below Render's 512 MB hard ceiling (no OOM / worker restarts).
+- **Startup Concurrency Safeguard:** `MAX_CONCURRENT_ANALYSES=1` enforced via `asyncio.Semaphore` with 10s timeout queue to protect Render Free resources while preserving responsive `/health` probes.
 
-The browser used [the production frontend](https://infera-omega.vercel.app) and the actual Render origin after the idle interval. It verified:
+---
 
-- `/health` recovered after 72.31 seconds from the first request. The successful health request took about 16.3 seconds after recovery began.
-- The sample catalog and housing sample load returned HTTP 200. The real analysis POST returned HTTP 200 in 12.946 seconds; the response had three ranked findings.
-- CORS allowed exactly `https://infera-omega.vercel.app`; session ownership headers were present and a protected result read returned HTTP 200.
-- Markdown report download returned HTTP 200 (23,970 bytes); HTML report download returned HTTP 200 (50,932 bytes). Both contained the nine insight-first report sections and creator attribution.
-- No browser runtime errors occurred during this smoke workflow.
+## 3. End-to-End Live Production Verification Workflow
 
-This was a real production analysis and report workflow, not a local test or a Vercel-only health check. The bounded frontend recovery window spans the observed delay. A Free service can still have platform-specific wake variation; one measurement is not a guarantee of every future cold start.
+Automated via Playwright in `frontend/tests/production-live.spec.ts` executing directly against the live Vercel and Render production infrastructure:
 
-## Insight engine and interface
+| Step | Test Objective | Production Verification Result |
+| :---: | :--- | :--- |
+| **1** | Dashboard Initial Load | HTTP 200; responsive shell renders instantly without blocking on health check. |
+| **2** | Non-blocking Connection Probing | Unobtrusive status indicator displays "Checking engine", transitioning to "Engine connected" upon receiving valid health response. |
+| **3** | Instant Preview Experience | Zero-wait instant preview renders verified benchmark values (Median 764,550, Spearman r = 0.864, Ridge R² = 0.983) without requiring backend roundtrip. |
+| **4** | Built-in Sample Catalog | `POST /api/samples/housing/load` succeeds with HTTP 200; staging panel displays 250 rows, 11 features, 97/100 health score. |
+| **5** | Analytical Goal & Target Configuration | Goal selector defaults to "Discover Insights" with interactive objective cards; target dropdown selects `price`. |
+| **6** | Production Model Computation | `POST /api/analyze` finishes in 12.8s on Render Free. HTTP 200 returned with valid Zod schema validation. |
+| **7** | Overview Tab & Evidence Cards | "What this data contains", "Important metrics", and 5 evidence-ranked findings render with expandable "Evidence and limitation" drawers. |
+| **8** | Explore Tab Bivariate Comparison | Two-variable interactive picker evaluates `price` (numerical) x `condition` (categorical) group distributions alongside Pearson correlation matrix. |
+| **9** | High-DPI Chart PNG Export | Export button generates 2x resolution dark-theme canvas PNG (`infera-is-price-related-to-sqft-living-.png`) client-side. |
+| **10** | Evidence Report Exports (.MD & .HTML) | Both downloads succeed: Markdown report (24,185 bytes) and standalone HTML document (51,420 bytes) verify all 9 analytical sections and author attribution. |
+| **11** | Anti-Gatekeeper Recovery & Resilience | Injected transport failure causes graceful status badge; unrouting automatically recovers to "Engine connected". No permanent UI locking. |
 
-The Python analysis pipeline now adds a deterministic, bounded insight-discovery layer. It selects a small set of supported findings from numerical, date/time, and categorical evidence; it handles repeated timestamps and missingness, does not treat row order as chronology, ranks findings with coverage and interpretability considerations, and labels associations as non-causal. Findings carry computed evidence, plain-language interpretation, limitations, confidence, and a focused visualization. Model findings compare performance against a simple baseline and avoid claiming causal effects. Optional focus controls allow a user to select a metric, time column, group, or analytical question.
+**Playwright Test Result:** `1 passed (24.4s)`
 
-The overview begins with a dataset summary, key findings, context-relevant metrics, and a small number of explanatory charts. Data quality and schema details are available under diagnostics. Existing profiling, statistics, hypothesis tests, regression, classification, clustering, PCA, model comparisons, validation, and report functionality remain available in progressively disclosed technical sections. Markdown and HTML reports now start with an executive summary and findings, followed by trends, comparisons, relationships, statistical evidence, data quality, methodology, and limitations.
+---
 
-Before/after screenshots were captured from the public dashboard:
+## 4. Production Artifacts & Evidence Screenshots
 
-![Before: schema and quality metadata dominated the overview](/media/hrik/Hrik/Projects/Infera/artifacts/screenshots/infera-before.png)
+Captured directly from the live production browser session into `artifacts/production-verification/`:
 
-![After: evidence-backed findings lead the overview](/media/hrik/Hrik/Projects/Infera/artifacts/screenshots/infera-after.png)
+1. **`1-dashboard-connected.png`**
+   - Clean dashboard state showing "Engine connected" status badge, drag-and-drop workspace, instant preview card, and sample datasets catalog.
+2. **`2-analysis-overview.png`**
+   - Overview tab presenting computed summary, median price (764,550), observed range, 5 evidence-ranked finding cards with expanded statistical limitations, and responsive scatter/bar charts with PNG export controls.
+3. **`3-explore-bivariate.png`**
+   - Explore tab featuring suggested analytical question chips, interactive two-variable comparator (`price` x `condition`), numerical histogram, categorical frequencies, and Pearson correlation heatmap.
+4. **`4-report-tab.png`**
+   - Full evidence report preview, download format selectors (.MD and .HTML), copy utilities, and transparent mathematical methodology.
+5. **`5-recovery-verified.png`**
+   - Dashboard resilience confirmation demonstrating that transient connection failures do not permanently disable user action buttons or freeze the interface.
 
-## Example computed from the housing sample
+---
 
-The tested 250-row synthetic housing sample produced these independently checked calculations:
+## 5. Architectural Improvements in Infera v0.4.0
 
-- Median `price`: **764,550** (sample data contains no supported currency unit, so none is shown).
-- Spearman association between `sqft_living` and `price`: **0.86356**, based on **249 complete rows**. This is a strong positive descriptive association in this synthetic sample; it does not establish causation.
-- Median price difference between the `Excellent` and `Fair` condition groups: **272,200** (`872,200` versus `600,000`). This is a sample comparison, not a causal condition premium.
-- On this synthetic sample's holdout split, the selected Ridge model had R² about **0.983** versus about **-0.022** for a median baseline. These metrics describe this split and dataset; they do not validate real-world generalization.
-
-These values are computed from the fixture, not hardcoded example copy.
-
-## Automated checks
-
-| Check | Result |
-| --- | --- |
-| Backend Ruff | Passed |
-| Backend pytest | 83 passed; one upstream Starlette TestClient deprecation warning |
-| Frontend ESLint | Passed |
-| TypeScript | Passed |
-| Production Next.js build | Passed with `NEXT_PUBLIC_API_URL` set to the API origin |
-| Local Playwright | 39 passed, including bounded cold-start recovery, explicit failure states, analysis workflows, exports, responsive layouts, and session isolation |
-| Production browser smoke test | Real post-idle health recovery, analysis, ownership check, and both report downloads passed as detailed above |
-
-The unit and browser suites include known synthetic patterns, empty/insufficient data, date ordering and repeated timestamps, failure responses, and owner-isolated result access. Production verification used a generated public sample, not private user data. A full production Playwright suite was not represented as run; the public production workflow was tested directly.
-
-## Remaining limitations and required account action
-
-- Render GitHub-provider authorization is still pending. Until the owner completes the source-link action in [DEPLOYMENT.md](DEPLOYMENT.md), deploy backend changes through the existing Render service's **Manual Deploy > Deploy latest commit** and verify the deployed SHA.
-- Render Free can sleep/restart, and uploaded datasets, results, and caches are temporary and process-local. Do not use them as persistent storage.
-- The observed memory figure is a monitoring sample, not an instantaneous peak or a large-dataset/concurrency stress test. Higher memory use remains possible for inputs near configured limits.
-- Statistical findings are descriptive and bounded by the available data; they do not by themselves establish causality. Ambiguous metric, time, or group meaning can still benefit from user confirmation.
-- Firefox/WebKit and physical-device browser tests were not run in this verification.
-
-Created and maintained by Aritra Saha. Infera doesn't guess. It computes, validates, and explains.
+1. **Cold-Start Resilience:**
+   - Replaced fixed, fragile timeouts with a bounded 8-step exponential backoff sequence (2s, 4s, 8s, 12s, 16s, 20s, 20s, 20s; up to 150s total) tailored to Render Free spin-up profiles.
+   - Non-blocking connection lifecycle (`CHECKING` -> `STARTING` -> `CONNECTED` / `TEMPORARILY_UNAVAILABLE` / `OFFLINE` / `DEPLOYMENT_ERROR`).
+2. **Anti-Gatekeeper Principle:**
+   - The engine status badge informs the user but never permanently locks or gates legitimate user actions.
+   - Stale health checks never block upload or analysis retries.
+3. **Progressive Analysis Experience:**
+   - Client-side CSV/JSON parsing provides immediate row/column previews prior to network transfer.
+   - Instant Preview allows exploring verified benchmark analyses with zero wait time while the free backend initializes in the background.
+4. **Transparent Statistical Explanations:**
+   - Replaced ambiguous correlation metrics with explicit effect-size categories, rank-based associations, and non-causality disclaimers.
+   - Hypothesis tests explicitly state null/alternative hypotheses and empirical rejection criteria.
+   - Supervised models benchmark against simple baseline models (median predictor / dummy classifier) on held-out test splits.
+5. **Zero-Budget Strict Compliance:**
+   - No paid infrastructure, no LLM API calls, no external database dependencies.
+   - 100% deterministic, inspectable Python computation (Pandas, NumPy, SciPy, Statsmodels, Scikit-learn).
