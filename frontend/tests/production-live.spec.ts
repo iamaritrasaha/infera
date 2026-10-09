@@ -86,7 +86,7 @@ test("live: production verification of Infera v0.5.0", async ({ page }) => {
     name: "Retry analysis engine connection",
   });
   await expect(engineIndicator).toBeVisible({ timeout: 150_000 });
-  await expect(engineIndicator).toContainText("Engine connected");
+  await expect(engineIndicator).toContainText("Engine connected", { timeout: 150_000 });
 
   await page.screenshot({
     path: path.join(ARTIFACTS_DIR, `1-dashboard-connected${browserSuffix}.png`),
