@@ -1,15 +1,35 @@
-import { test, expect, Page } from "@playwright/test";
+import { test, expect, Page, Request } from "@playwright/test";
 import fs from "node:fs/promises";
 
 const csv = "measurement,second,constant,group,target\n" + Array.from({ length: 40 }, (_, i) => `${i - 20},${i * i},5,${i % 2 ? "A" : "B"},${i * 2.5 - 50}`).join("\n");
 const runtimeErrors: string[] = [];
+const navigationCancellations: string[] = [];
 test.beforeEach(async ({ page }) => {
   runtimeErrors.length = 0;
+  navigationCancellations.length = 0;
+  const successfulRscRequests = new WeakSet<Request>();
+  page.on("response", response => {
+    const request = response.request();
+    const url = new URL(request.url());
+    if (response.status() === 200 && request.method() === "GET" && url.origin === new URL(page.url()).origin && url.searchParams.has("_rsc")) {
+      successfulRscRequests.add(request);
+    }
+  });
   page.on("pageerror", e => runtimeErrors.push(e.message));
   page.on("console", m => { if (m.type() === "error") runtimeErrors.push(m.text()); });
-  page.on("requestfailed", r => runtimeErrors.push(`${r.method()} ${r.url()} ${r.failure()?.errorText}`));
+  page.on("requestfailed", request => {
+    const message = `${request.method()} ${request.url()} ${request.failure()?.errorText}`;
+    // Navigating away can cancel a Next.js RSC stream after its HTTP 200 response.
+    // Keep API failures, other network errors, and cancellations before a response fatal.
+    if (request.failure()?.errorText === "net::ERR_ABORTED" && successfulRscRequests.has(request)) {
+      navigationCancellations.push(message);
+      return;
+    }
+    runtimeErrors.push(message);
+  });
 });
 test.afterEach(async ({}, info) => {
+  if (navigationCancellations.length) await info.attach("successful-rsc-navigation-cancellations", { body: navigationCancellations.join("\n"), contentType: "text/plain" });
   if (!info.title.startsWith("error:")) expect(runtimeErrors, "Browser errors or failed network requests").toEqual([]);
 });
 async function noOverflow(page: Page) {

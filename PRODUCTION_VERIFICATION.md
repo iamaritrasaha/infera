@@ -20,6 +20,7 @@ Verified on 9 October 2026 (Asia/Kolkata). Infera is independently created and m
 5. Production CORS was configured for exactly the frontend origin. The application uses an anonymous session header, not cross-site session cookies. Cookie credentials are omitted. The random per-tab token stays in browser session storage and never enters dataset/report URLs.
 6. Playwright now accepts an explicit deployed base URL, adds an actual Excel fixture workflow and an independent-browser ownership test, and writes local/production JSON summaries. A test observer initially attempted to read the upload response before its body was available; the corrected test obtains the dataset identifier from the actual analysis request, after the frontend has consumed and validated the upload response. This was a test timing issue, not a backend failure.
 7. A push deployed automatically on Vercel but created no Render deployment. The directly created backend uses a public repository URL without connected Git provider credentials. Render's auto-deploy flag alone does not enable push-triggered deployment for this source. The final backend revision is deployed manually through the connector; future backend updates require Manual Deploy until the Git provider is connected. See [DEPLOYMENT.md](DEPLOYMENT.md) for exact account-linking steps.
+8. A post-deployment housing check initially flagged a Next.js navigation stream canceled after HTTP 200 when navigating away. The trace confirmed the About page rendered and the complete analysis/export workflow succeeded. The browser observer now records these same-origin GET RSC cancellations as attachments only after a successful response. API failures, console errors, other network errors, and cancellations before a response still fail the checks.
 
 ## Tests executed and results
 
@@ -30,8 +31,8 @@ Verified on 9 October 2026 (Asia/Kolkata). Infera is independently created and m
 | Frontend ESLint | Passed |
 | TypeScript `tsc --noEmit` | Passed |
 | Production Next.js build | Passed locally and on Vercel |
-| Local Playwright suite | 29 passed in 32.5 seconds, zero unexpected/flaky/skipped tests |
-| Production-target Playwright suite | 29 passed in 173.0 seconds, zero unexpected/flaky/skipped tests |
+| Local Playwright suite | 29 passed initially in 32.5 seconds and after observer correction in 32.8 seconds; zero unexpected/flaky/skipped tests |
+| Production-target Playwright suite | 29 passed initially in 173.0 seconds and after observer correction in 168.7 seconds; zero unexpected/flaky/skipped tests |
 | Allowed CORS preflight | HTTP 200; allow-origin exactly https://infera-omega.vercel.app; session header accepted |
 | Unapproved CORS origin | HTTP 400 with no allow-origin header |
 | Independent session access | Another browser session receives 404 for analysis, results, and HTML reports; owner receives 200 |
