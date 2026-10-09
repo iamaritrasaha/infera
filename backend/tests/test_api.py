@@ -52,6 +52,12 @@ def test_load_sample_and_analyze():
     assert analysis_data["problem_detection"]["problem_type"] == "regression"
     assert analysis_data["modeling"] is not None
     assert len(analysis_data["modeling"]["models"]) >= 4
+    discovery = analysis_data["insight_discovery"]
+    assert len(discovery["key_findings"]) <= 5
+    assert "Housing Prices contains" in discovery["dataset_overview"]
+    assert any(metric["label"] == "Typical price" for metric in discovery["important_metrics"])
+    assert "## 1. Executive Summary" in analysis_data["reports"]["markdown"]
+    assert analysis_data["reports"]["markdown"].index("## 1. Executive Summary") < analysis_data["reports"]["markdown"].index("## 2. Key Findings")
 
     # 3. Retrieve results from cache
     get_res = client.get(f"/api/results/{dataset_id}")

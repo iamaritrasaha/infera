@@ -48,7 +48,18 @@ async def run_analysis(request: AnalyzeRequest, owner: Annotated[str, Depends(re
 
     try:
         # Offload CPU-heavy computation to thread pool so /health probes remain responsive
-        task = asyncio.create_task(asyncio.to_thread(execute_analysis, request.dataset_id, request.target_column, owner))
+        task = asyncio.create_task(
+            asyncio.to_thread(
+                execute_analysis,
+                request.dataset_id,
+                request.target_column,
+                owner,
+                metric_column=request.metric_column,
+                date_column=request.date_column,
+                group_column=request.group_column,
+                question=request.question,
+            )
+        )
         try:
             payload = await asyncio.shield(task)
         except asyncio.CancelledError:

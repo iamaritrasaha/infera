@@ -1,6 +1,6 @@
 """Pydantic schemas for API request and response serialization."""
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -65,6 +65,66 @@ class AnalyzeRequest(BaseModel):
         max_length=100,
         description="Optional user-selected target column",
     )
+    metric_column: str | None = Field(None, max_length=100)
+    date_column: str | None = Field(None, max_length=100)
+    group_column: str | None = Field(None, max_length=100)
+    question: Literal["automatic", "time", "groups", "relationships", "distributions"] = "automatic"
+
+
+class InsightPoint(BaseModel):
+    x: str | float
+    y: float
+    detail: str | None = None
+
+
+class InsightChart(BaseModel):
+    kind: Literal["line", "bar", "histogram", "scatter"]
+    title: str
+    x_label: str
+    y_label: str
+    points: list[InsightPoint]
+
+
+class KeyFinding(BaseModel):
+    id: str
+    category: Literal["time", "group", "relationship", "distribution", "model"]
+    finding_type: Literal["observed", "association", "prediction"]
+    title: str
+    summary: str
+    interpretation: str
+    limitation: str
+    confidence: Literal["high", "moderate", "exploratory"]
+    evidence: dict[str, Any]
+    chart: InsightChart | None = None
+
+
+class ImportantMetric(BaseModel):
+    label: str
+    value: str
+    detail: str
+
+
+class InsightFocus(BaseModel):
+    metric_column: str | None = None
+    date_column: str | None = None
+    group_column: str | None = None
+    question: str
+
+
+class InsightOptions(BaseModel):
+    metric_columns: list[str]
+    date_columns: list[str]
+    group_columns: list[str]
+
+
+class InsightDiscovery(BaseModel):
+    dataset_overview: str
+    status: str
+    selected_focus: InsightFocus
+    options: InsightOptions
+    important_metrics: list[ImportantMetric]
+    key_findings: list[KeyFinding]
+    suggested_questions: list[str]
 
 
 class AnalysisResponse(BaseModel):
@@ -85,6 +145,7 @@ class AnalysisResponse(BaseModel):
     pca: dict[str, Any] | None = None
     timeseries: dict[str, Any] | None = None
     insights: list[dict[str, Any]]
+    insight_discovery: InsightDiscovery
     preview_rows: list[dict[str, Any]] | None = None
     reports: dict[str, str]
 

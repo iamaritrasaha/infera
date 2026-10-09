@@ -10,6 +10,7 @@ from app.analysis.classification.runner import (
 from app.analysis.clustering.runner import run_clustering_suite
 from app.analysis.dimensionality.pca import compute_pca
 from app.analysis.explanations.provider import StructuredInsight, TemplateExplanationProvider
+from app.analysis.insights.discovery import Question, discover_insights
 from app.analysis.pipeline.detector import detect_problem_type
 from app.analysis.pipeline.planner import SkippedAnalysis, plan_analyses
 from app.analysis.pipeline.validator import prepare_supervised_data
@@ -57,6 +58,10 @@ def run_full_analysis(
     df: pd.DataFrame,
     dataset_name: str = "Dataset",
     user_target: str | None = None,
+    metric_column: str | None = None,
+    date_column: str | None = None,
+    group_column: str | None = None,
+    question: Question = "automatic",
 ) -> dict:
     """Orchestrates comprehensive profiling, statistics, ML benchmarking, and insight generation."""
     # 1. Schema & Profiling
@@ -206,6 +211,21 @@ def run_full_analysis(
         )
 
     # Assemble complete payload
+    insight_discovery = discover_insights(
+        df,
+        dataset_name,
+        numerical_columns=schema.numerical_columns,
+        categorical_columns=schema.categorical_columns,
+        datetime_columns=schema.datetime_columns,
+        id_columns=schema.id_columns,
+        constant_columns=schema.constant_columns,
+        target_column=problem.target_column,
+        metric_column=metric_column,
+        date_column=date_column,
+        group_column=group_column,
+        question=question,
+        modeling=modeling_result,
+    )
     payload = {
         "dataset_name": dataset_name,
         "health_score": health_score,
@@ -226,6 +246,7 @@ def run_full_analysis(
         "pca": pca_res,
         "timeseries": ts_res,
         "insights": [asdict(i) for i in insights],
+        "insight_discovery": insight_discovery,
         "preview_rows": df.head(10).to_dict(orient="records"),
     }
 

@@ -303,6 +303,61 @@ export interface StructuredInsight {
   calculation_details: string;
 }
 
+export type InsightQuestion =
+  | "automatic"
+  | "time"
+  | "groups"
+  | "relationships"
+  | "distributions";
+
+export interface AnalysisFocus {
+  metric_column?: string | null;
+  date_column?: string | null;
+  group_column?: string | null;
+  question: InsightQuestion;
+}
+
+export interface InsightChartPoint {
+  x: string | number;
+  y: number;
+  detail?: string | null;
+}
+
+export interface InsightChartData {
+  kind: "line" | "bar" | "histogram" | "scatter";
+  title: string;
+  x_label: string;
+  y_label: string;
+  points: InsightChartPoint[];
+}
+
+export interface KeyFinding {
+  id: string;
+  category: "time" | "group" | "relationship" | "distribution" | "model";
+  finding_type: "observed" | "association" | "prediction";
+  title: string;
+  summary: string;
+  interpretation: string;
+  limitation: string;
+  confidence: "high" | "moderate" | "exploratory";
+  evidence: Record<string, unknown>;
+  chart: InsightChartData | null;
+}
+
+export interface InsightDiscovery {
+  dataset_overview: string;
+  status: string;
+  selected_focus: Required<AnalysisFocus>;
+  options: {
+    metric_columns: string[];
+    date_columns: string[];
+    group_columns: string[];
+  };
+  important_metrics: { label: string; value: string; detail: string }[];
+  key_findings: KeyFinding[];
+  suggested_questions: string[];
+}
+
 export interface AnalysisResponse {
   dataset_id: string;
   dataset_name: string;
@@ -353,6 +408,7 @@ export interface AnalysisResponse {
   pca: PCAResult | null;
   timeseries: TimeSeriesResult | null;
   insights: StructuredInsight[];
+  insight_discovery: InsightDiscovery;
   preview_rows?: Record<string, unknown>[];
   reports: {
     markdown: string;

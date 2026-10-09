@@ -1,5 +1,10 @@
 /** Browser-to-FastAPI client. Anonymous ownership tokens never appear in URLs. */
-import { AnalysisResponse, SampleDatasetInfo, UploadResponse } from "./types";
+import {
+  AnalysisFocus,
+  AnalysisResponse,
+  SampleDatasetInfo,
+  UploadResponse,
+} from "./types";
 import {
   analysisSchema,
   samplesSchema,
@@ -76,7 +81,12 @@ function sessionToken(): string {
 export class ApiError extends Error {
   constructor(
     message: string,
-    public readonly kind: "transient" | "configuration" | "schema" | "http",
+    public readonly kind:
+      | "transient"
+      | "configuration"
+      | "incompatible"
+      | "deployment"
+      | "http",
     public readonly status?: number,
   ) {
     super(message);
@@ -84,8 +94,8 @@ export class ApiError extends Error {
   }
 }
 
-const STARTING =
-  "The analysis engine may be starting or unavailable. Please try again shortly. If this persists, check the API URL and backend CORS settings.";
+const TEMPORARY_UNAVAILABLE =
+  "The analysis engine could not be reached. The free Render service may be waking up; check your connection and the backend CORS/API URL if this continues.";
 export function errorMessage(error: unknown): string {
   return error instanceof Error
     ? error.message
@@ -96,7 +106,7 @@ async function request(
   path: string,
   init: RequestInit = {},
   owned = false,
-  timeoutMs = 65000,
+  timeoutMs = 125000,
   signal?: AbortSignal,
 ): Promise<Response> {
   const base = apiBase();
@@ -130,10 +140,23 @@ async function request(
         422: "The request contains invalid fields. Check the file and selected target.",
         429: "The engine is processing another analysis. Wait a few moments, then retry.",
       };
-      if (response.status >= 500)
+      if (response.status >= 500) {
+        const transient = [502, 503, 504].includes(response.status);
+        const healthFailure = path === "/health" && !transient;
         throw new ApiError(
-          `${STARTING} (HTTP ${response.status})`,
-          "transient",
+          healthFailure
+            ? `The backend health endpoint returned HTTP ${response.status}; check the Render startup and health-check logs.`
+            : transient
+              ? `The analysis service is temporarily unavailable (HTTP ${response.status}). Render may be starting the free instance.`
+              : `The analysis service returned HTTP ${response.status}. Retry, and check backend logs if the error continues.`,
+          healthFailure ? "deployment" : transient ? "transient" : "http",
+          response.status,
+        );
+      }
+      if (path === "/health" && response.status === 404)
+        throw new ApiError(
+          "The configured backend does not provide the expected /health endpoint. Check the Render service and health-check path.",
+          "deployment",
           response.status,
         );
       const safeDetail =
@@ -160,12 +183,13 @@ async function request(
     if (signal?.aborted) throw signal.reason;
     if (controller.signal.aborted)
       throw new ApiError(
-        timeoutMs > 65000
+        path === "/api/analyze"
           ? "Analysis took longer than expected. The server may still be computing. Retry to retrieve the cached result."
-          : STARTING,
+          : TEMPORARY_UNAVAILABLE,
         "transient",
       );
-    if (error instanceof TypeError) throw new ApiError(STARTING, "transient");
+    if (error instanceof TypeError)
+      throw new ApiError(TEMPORARY_UNAVAILABLE, "transient");
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -177,14 +201,14 @@ async function json<T>(response: Response, schema: z.ZodType<T>): Promise<T> {
     return schema.parse(await response.json());
   } catch {
     throw new ApiError(
-      "The analysis engine returned an invalid response. Please retry; if this persists, check that frontend and backend versions match.",
-      "schema",
+      "The backend responded, but its health or analysis response does not match this frontend version. Deploy compatible frontend and backend revisions.",
+      "incompatible",
     );
   }
 }
-export async function fetchHealth(signal?: AbortSignal) {
+export async function fetchHealth(signal?: AbortSignal, timeoutMs = 25000) {
   return json(
-    await request("/health", {}, false, 25000, signal),
+    await request("/health", {}, false, timeoutMs, signal),
     z.object({
       status: z.literal("ok"),
       project: z.literal("Infera"),
@@ -225,6 +249,7 @@ export async function uploadDatasetFile(file: File): Promise<UploadResponse> {
 export async function executeFullAnalysis(
   datasetId: string,
   targetColumn?: string,
+  focus: AnalysisFocus = { question: "automatic" },
 ): Promise<AnalysisResponse> {
   return json(
     await request(
@@ -235,6 +260,10 @@ export async function executeFullAnalysis(
         body: JSON.stringify({
           dataset_id: datasetId,
           target_column: targetColumn || null,
+          metric_column: focus.metric_column || null,
+          date_column: focus.date_column || null,
+          group_column: focus.group_column || null,
+          question: focus.question,
         }),
       },
       true,

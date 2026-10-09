@@ -54,7 +54,16 @@ result_cache = AnalysisResultCache(
 )
 
 
-def execute_analysis(dataset_id: str, target_column: str | None = None, owner: str | None = None) -> dict:
+def execute_analysis(
+    dataset_id: str,
+    target_column: str | None = None,
+    owner: str | None = None,
+    *,
+    metric_column: str | None = None,
+    date_column: str | None = None,
+    group_column: str | None = None,
+    question: str = "automatic",
+) -> dict:
     """Retrieves dataset from session, executes master analysis, and caches result."""
     entry = session_store.get(dataset_id, owner)
     if not entry:
@@ -64,13 +73,32 @@ def execute_analysis(dataset_id: str, target_column: str | None = None, owner: s
 
     df, name = entry
     existing = result_cache.get(dataset_id)
-    if existing and existing.get("requested_target") == target_column:
+    requested_focus = {
+        "metric_column": metric_column,
+        "date_column": date_column,
+        "group_column": group_column,
+        "question": question,
+    }
+    if (
+        existing
+        and existing.get("requested_target") == target_column
+        and existing.get("requested_focus") == requested_focus
+    ):
         return existing
     logger.info("Starting analysis with %d rows", len(df))
 
-    payload = run_full_analysis(df, dataset_name=name, user_target=target_column)
+    payload = run_full_analysis(
+        df,
+        dataset_name=name,
+        user_target=target_column,
+        metric_column=metric_column,
+        date_column=date_column,
+        group_column=group_column,
+        question=question,
+    )
     payload["dataset_id"] = dataset_id
     payload["requested_target"] = target_column
+    payload["requested_focus"] = requested_focus
 
     # Cache under dataset_id (or dataset_id + target key)
     result_cache.put(dataset_id, payload)

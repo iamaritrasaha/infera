@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { AnalysisResponse } from "@/lib/types";
+import { AnalysisFocus } from "@/lib/types";
 import { executeFullAnalysis, errorMessage } from "@/lib/api";
 import { EngineDetail } from "./EngineConnection";
 import { VisualizationBoundary } from "./VisualizationBoundary";
@@ -45,7 +46,7 @@ export function AnalysisView({ initialData, onReset }: AnalysisViewProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleReAnalyze = async (newTarget?: string) => {
+  const handleReAnalyze = async (newTarget?: string, newFocus?: AnalysisFocus) => {
     if (isLoading) return;
     setIsLoading(true);
     setError(null);
@@ -53,6 +54,7 @@ export function AnalysisView({ initialData, onReset }: AnalysisViewProps) {
       const refreshed = await executeFullAnalysis(
         data.dataset_id,
         newTarget ?? data.problem_detection.target_column ?? undefined,
+        newFocus ?? data.insight_discovery.selected_focus,
       );
       setData(refreshed);
     } catch (err) {
@@ -68,7 +70,7 @@ export function AnalysisView({ initialData, onReset }: AnalysisViewProps) {
     { id: "explore" as TabType, label: "Explore", icon: BarChart2 },
     { id: "statistics" as TabType, label: "Statistics", icon: FlaskConical },
     { id: "ml" as TabType, label: "Machine Learning", icon: Cpu },
-    { id: "insights" as TabType, label: "Insights", icon: Sparkles },
+    { id: "insights" as TabType, label: "Statistical Evidence", icon: Sparkles },
     { id: "report" as TabType, label: "Report", icon: FileText },
   ];
 
@@ -99,16 +101,12 @@ export function AnalysisView({ initialData, onReset }: AnalysisViewProps) {
               <h2 className="text-lg font-bold text-white tracking-tight break-all">
                 {data.dataset_name}
               </h2>
-              <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800">
-                {data.problem_detection.problem_type.replace("_", " ")}
+              <span className="text-[11px] px-2 py-0.5 rounded bg-cyan-950 text-cyan-200 border border-cyan-900">
+                Evidence overview
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              {data.schema.row_count.toLocaleString()} rows &bull;{" "}
-              {data.schema.column_count} columns &bull; Health:{" "}
-              <strong className="text-slate-200">
-                {data.health_score}/100
-              </strong>
+              {data.insight_discovery.key_findings.length} key findings · Computed from this dataset
             </p>
           </div>
         </div>
@@ -125,7 +123,7 @@ export function AnalysisView({ initialData, onReset }: AnalysisViewProps) {
             ) : (
               <RefreshCw className="w-3.5 h-3.5" />
             )}
-            <span>{isLoading ? "Computing..." : "Re-Run Pipeline"}</span>
+            <span>{isLoading ? "Computing..." : "Refresh findings"}</span>
           </button>
 
           <button
@@ -209,7 +207,9 @@ export function AnalysisView({ initialData, onReset }: AnalysisViewProps) {
           >
             {activeTab === "overview" && (
               <OverviewTab
+                key={JSON.stringify(data.insight_discovery.selected_focus)}
                 data={data}
+                onApplyFocus={(focus) => handleReAnalyze(undefined, focus)}
                 onSelectTarget={() => {
                   setActiveTab("ml");
                 }}

@@ -18,7 +18,7 @@ test("error: transient health response retries then validates the real backend",
     page.getByText("Starting the analysis engine", { exact: true }).first(),
   ).toBeVisible();
   await expect(
-    page.getByText("The free analysis server may need a moment to wake up."),
+    page.getByText(/bounded health checks allow up to two minutes/i),
   ).toBeVisible();
   await page.clock.fastForward(2000);
   await expect(
@@ -37,7 +37,44 @@ test("error: transient health response retries then validates the real backend",
   );
 });
 
-test("error: four failed health attempts stop, with manual recovery", async ({
+test("error: a Render-like cold start can take over ninety seconds", async ({
+  page,
+}) => {
+  await page.clock.install();
+  let calls = 0;
+  await page.route("**/health", (route) => {
+    calls++;
+    return calls < 9
+      ? route.fulfill({ status: 503, body: "Instance is waking" })
+      : route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: '{"status":"ok","project":"Infera","version":"0.1.0"}',
+        });
+  });
+  await page.goto("/dashboard");
+  await expect.poll(() => calls).toBe(1);
+  for (const [delay, count] of [
+    [2000, 2],
+    [4000, 3],
+    [8000, 4],
+    [12000, 5],
+    [16000, 6],
+    [20000, 7],
+    [20000, 8],
+    [20000, 9],
+  ]) {
+    await page.clock.fastForward(delay);
+    await expect.poll(() => calls).toBe(count);
+  }
+  expect(calls).toBe(9);
+  await expect(
+    page.getByRole("button", { name: "Retry analysis engine connection" }),
+  ).toContainText("Engine connected");
+  expect(calls).toBe(9);
+});
+
+test("error: bounded health attempts stop, with manual recovery", async ({
   page,
 }) => {
   await page.clock.install();
@@ -50,8 +87,13 @@ test("error: four failed health attempts stop, with manual recovery", async ({
   await expect.poll(() => calls).toBe(1);
   for (const [delay, count] of [
     [2000, 2],
-    [4500, 3],
-    [8500, 4],
+    [4000, 3],
+    [8000, 4],
+    [12000, 5],
+    [16000, 6],
+    [20000, 7],
+    [20000, 8],
+    [20000, 9],
   ]) {
     await page.clock.fastForward(delay);
     await expect.poll(() => calls).toBe(count);
@@ -63,7 +105,7 @@ test("error: four failed health attempts stop, with manual recovery", async ({
     "HTTP 503",
   );
   await page.clock.fastForward(300000);
-  expect(calls).toBe(4);
+  expect(calls).toBe(9);
   await page.unroute("**/health");
   await page
     .getByRole("button", { name: "Retry connection", exact: true })
@@ -76,7 +118,7 @@ test("error: four failed health attempts stop, with manual recovery", async ({
   ).toBeVisible();
 });
 
-test("error: invalid health schema is degraded and never claims connected", async ({
+test("error: invalid health schema is incompatible and never claims connected", async ({
   page,
 }) => {
   let calls = 0;
@@ -90,7 +132,7 @@ test("error: invalid health schema is degraded and never claims connected", asyn
   });
   await page.goto("/dashboard");
   await expect(page.locator(".engine-banner[role=alert]")).toContainText(
-    "invalid response",
+    "does not match this frontend version",
   );
   await expect(
     page.getByRole("button", { name: "Retry analysis engine connection" }),
@@ -103,6 +145,24 @@ test("error: invalid health schema is degraded and never claims connected", asyn
   await expect(
     page.getByRole("button", { name: "Retry analysis engine connection" }),
   ).toContainText("Engine connected");
+});
+
+test("error: a missing health endpoint is reported as a deployment problem", async ({
+  page,
+}) => {
+  let calls = 0;
+  await page.route("**/health", (route) => {
+    calls++;
+    return route.fulfill({ status: 404, body: "not found" });
+  });
+  await page.goto("/dashboard");
+  await expect(page.locator(".engine-banner[role=alert]")).toContainText(
+    "does not provide the expected /health endpoint",
+  );
+  await expect(
+    page.getByRole("button", { name: "Retry analysis engine connection" }),
+  ).toContainText("Backend deployment problem");
+  expect(calls).toBe(1);
 });
 
 for (const width of [375, 768, 1366, 1920]) {

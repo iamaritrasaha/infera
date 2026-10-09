@@ -98,6 +98,18 @@ for (const width of [375, 768, 1366, 1920]) {
       fullPage: true,
     });
     await analyze(page, "Housing Prices");
+    await expect(
+      page.getByRole("heading", { name: "What this data contains" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Key findings" }),
+    ).toBeVisible();
+    if (width === 1366) {
+      await page.screenshot({
+        path: info.outputPath("infera-insight-first-overview.png"),
+        fullPage: true,
+      });
+    }
     await page.getByRole("tab", { name: "Overview", exact: true }).focus();
     await page.keyboard.press("ArrowRight");
     await expect(
@@ -113,7 +125,7 @@ for (const width of [375, 768, 1366, 1920]) {
       "Explore",
       "Statistics",
       "Machine Learning",
-      "Insights",
+      "Statistical Evidence",
       "Report",
     ]) {
       await page.getByRole("tab", { name: tab, exact: true }).click();
@@ -144,7 +156,7 @@ for (const width of [375, 768, 1366, 1920]) {
           fullPage: true,
         });
       }
-      if (tab === "Insights") {
+      if (tab === "Statistical Evidence") {
         await page
           .getByRole("button", { name: /View Evidence/i })
           .first()
@@ -244,6 +256,16 @@ test("real CSV upload, negative values, constants, charts and rerun", async ({
     },
   );
   expect(result.schema.row_count).toBe(40);
+  expect(result.insight_discovery.key_findings.length).toBeLessThanOrEqual(5);
+  expect(result.insight_discovery.important_metrics[0]).toMatchObject({
+    label: "Typical target",
+    value: "-1.25",
+  });
+  expect(
+    result.insight_discovery.key_findings.some(
+      (item: { finding_type: string }) => item.finding_type === "association",
+    ),
+  ).toBe(true);
   expect(
     result.descriptive_statistics.numerical.find(
       (c: { column: string }) => c.column === "measurement",
@@ -269,9 +291,9 @@ test("real CSV upload, negative values, constants, charts and rerun", async ({
     .getByRole("tab", { name: "Machine Learning", exact: true })
     .click();
   await expect(page.getByRole("tabpanel")).toContainText("RMSE");
-  await page.getByRole("button", { name: "Re-Run Pipeline" }).click();
+  await page.getByRole("button", { name: "Refresh findings" }).click();
   await expect(
-    page.getByRole("button", { name: "Re-Run Pipeline" }),
+    page.getByRole("button", { name: "Refresh findings" }),
   ).toBeEnabled();
   await page.getByRole("tab", { name: "Report", exact: true }).click();
   for (const label of ["Download .MD", "Download .HTML"]) {
@@ -284,6 +306,59 @@ test("real CSV upload, negative values, constants, charts and rerun", async ({
     await download.saveAs(info.outputPath(download.suggestedFilename()));
   }
   await noOverflow(page);
+});
+
+test("optional focus re-computes findings from the selected metric and date", async ({
+  page,
+}) => {
+  const rows = Array.from({ length: 40 }, (_, index) =>
+    `${new Date(Date.UTC(2025, 0, 1 + index)).toISOString().slice(0, 10)},${index * 3 + 4},${index % 2 ? "north" : "south"}`,
+  );
+  const content = `when,revenue,region\n${rows.join("\n")}`;
+  await page.goto("/dashboard");
+  await page.getByLabel("Dataset file").setInputFiles({
+    name: "daily-results.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(content),
+  });
+  await page.getByRole("button", { name: "Launch Full Analysis" }).click();
+  await expect(
+    page.getByRole("heading", { name: "What this data contains" }),
+  ).toBeVisible({ timeout: 150_000 });
+  await page.getByText("Choose a metric, date, or grouping to focus the analysis").click();
+  await page.getByLabel("Main metric").selectOption("revenue");
+  await page.getByLabel("Date or time field").selectOption("when");
+  await page.getByLabel("Group by").selectOption("region");
+  await page.getByLabel("Analytical question").selectOption("time");
+  const analysis = page.waitForResponse(
+    (response) => response.url().endsWith("/api/analyze") && response.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "Update analysis focus" }).click();
+  const response = await analysis;
+  expect(response.status()).toBe(200);
+  const result = await page.evaluate(
+    async ({ origin, datasetId }) => {
+      const fetched = await fetch(`${origin}/api/results/${datasetId}`, {
+        headers: {
+          "X-Infera-Session": sessionStorage.getItem("infera-session")!,
+        },
+      });
+      if (!fetched.ok)
+        throw new Error(`Focused result verification failed: ${fetched.status}`);
+      return fetched.json();
+    },
+    {
+      origin: new URL(response.url()).origin,
+      datasetId: response.request().postDataJSON().dataset_id,
+    },
+  );
+  expect(result.insight_discovery.selected_focus).toEqual({
+    metric_column: "revenue",
+    date_column: "when",
+    group_column: "region",
+    question: "time",
+  });
+  expect(result.insight_discovery.key_findings[0].category).toBe("time");
 });
 
 test("real drag and drop CSV and keyboard upload access", async ({ page }) => {
@@ -494,10 +569,10 @@ test("error: unavailable backend message and safe catalog retry", async ({
   );
   await page.goto("/dashboard");
   await expect(
-    page.getByRole("alert").filter({ hasText: "starting" }),
+    page.getByRole("alert").filter({ hasText: "temporarily unavailable" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("alert").filter({ hasText: "starting" }),
+    page.getByRole("alert").filter({ hasText: "temporarily unavailable" }),
   ).not.toContainText("dataset is invalid");
   await page.unroute("**/api/samples");
   await page.getByRole("button", { name: "Retry sample catalog" }).click();
@@ -516,7 +591,7 @@ test("error: invalid API response is contained", async ({ page }) => {
   );
   await page.goto("/dashboard");
   await expect(
-    page.getByRole("alert").filter({ hasText: "invalid response" }),
+    page.getByRole("alert").filter({ hasText: "does not match this frontend version" }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Upload dataset", exact: true }),

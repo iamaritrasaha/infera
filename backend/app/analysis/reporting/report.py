@@ -1,12 +1,13 @@
 """Comprehensive report generator producing professional Markdown and standalone HTML reports."""
 
 import html
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 
 
-def generate_markdown_report(result_payload: dict) -> str:
-    """Generates an executive-grade, rigorous Markdown analysis report."""
+def _generate_technical_markdown(result_payload: dict) -> str:
+    """Generate the existing detailed statistics and diagnostics appendix."""
     dataset_name = result_payload.get("dataset_name", "Uploaded Dataset")
     result_payload.get("summary", {})
     health = result_payload.get("health_score", 100)
@@ -200,28 +201,291 @@ The empirical correlation engine computed Pearson linear coefficients and two-si
     return md
 
 
+def _finding_markdown(finding: dict) -> str:
+    evidence = finding.get("evidence", {})
+    lines = [
+        f"### {finding.get('title', 'Finding')}",
+        f"**Observed:** {finding.get('summary', '')}",
+        f"**What it suggests:** {finding.get('interpretation', '')}",
+        f"**Evidence strength:** {finding.get('confidence', 'exploratory')} · {finding.get('finding_type', 'observed')}",
+        "**Computed evidence:**",
+    ]
+    if evidence:
+        for key, value in evidence.items():
+            escaped = str(value).replace("|", r"\|")
+            lines.append(f"- **{str(key).replace('_', ' ')}:** {escaped}")
+    else:
+        lines.append("- No additional numeric evidence was available.")
+    lines.append(f"**Limitation:** {finding.get('limitation', 'Interpret this finding in context.')}")
+    return "\n".join(lines)
+
+
+def generate_markdown_report(result_payload: dict) -> str:
+    """Generate the insight-first report plus the complete legacy technical record."""
+    dataset_name = result_payload.get("dataset_name", "Uploaded Dataset")
+    discovery = result_payload.get("insight_discovery", {})
+    findings = discovery.get("key_findings", [])
+    trends = [item for item in findings if item.get("category") == "time"]
+    patterns = [item for item in findings if item.get("category") == "distribution"]
+    comparisons = [item for item in findings if item.get("category") == "group"]
+    relationships = [item for item in findings if item.get("category") == "relationship"]
+    models = result_payload.get("modeling") or {}
+    quality = result_payload.get("quality", {})
+    missing = quality.get("missing", {})
+    duplicates = quality.get("duplicates", {})
+    outliers = quality.get("outliers", {})
+
+    def rendered(items: list[dict]) -> str:
+        return "\n\n".join(_finding_markdown(item) for item in items) or "No well-supported findings in this category."
+
+    model_line = "No reliable model comparison was produced for this dataset."
+    if models:
+        model_line = (
+            f"The selected model was **{models.get('best_model_name', 'unavailable')}**, "
+            f"evaluated on {int(models.get('test_samples', 0)):,} held-out records with "
+            f"{int(models.get('cv_folds', 0))} cross-validation folds. These results are specific to this dataset and split."
+        )
+
+    technical = _generate_technical_markdown(result_payload)
+    detail_start = technical.find("## 3. Data Quality & Integrity Diagnostics")
+    appendix = technical[detail_start:] if detail_start >= 0 else technical
+    appendix = appendix.replace(
+        "## 3. Data Quality & Integrity Diagnostics",
+        "### Data Quality & Integrity Diagnostics",
+        1,
+    )
+    appendix = appendix.replace(
+        "## 4. Key Bivariate Relationships & Correlations",
+        "### Detailed Relationships & Correlations",
+        1,
+    )
+    appendix = appendix.replace("## Descriptive Statistics", "### Descriptive Statistics", 1)
+    appendix = appendix.replace("## 6. Machine Learning Model Benchmark", "### Machine Learning Model Benchmark", 1)
+    appendix = appendix.replace("## 7. Unsupervised Clustering & Segmentation", "### Unsupervised Clustering & Segmentation", 1)
+    appendix = appendix.replace("## 9. Methodology & Scientific Limitations", "### Detailed Methodology & Scientific Limitations", 1)
+    appendix = re.sub(r"^## \d+\. Statistical Hypothesis Testing", "### Statistical Hypothesis Testing", appendix, flags=re.MULTILINE)
+    appendix = re.sub(r"^## \d+\. Evidence-Backed Insights", "### Additional Computed Notes", appendix, flags=re.MULTILINE)
+
+    return f"""# INFERA DATA SCIENCE EVIDENCE REPORT
+
+**Dataset:** `{dataset_name}`
+
+**Generated:** {datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")}
+**Prepared by:** Infera · Independently developed by Aritra Saha
+
+## 1. Executive Summary
+
+{discovery.get("dataset_overview", f"Analysis of {dataset_name}.")}
+
+{discovery.get("status", "No supported pattern was identified.")}
+
+## 2. Key Findings
+
+{rendered(findings)}
+
+## 3. Major Trends and Patterns
+
+{rendered(trends + patterns)}
+
+## 4. Important Comparisons
+
+{rendered(comparisons)}
+
+## 5. Relationships
+
+{rendered(relationships)}
+
+## 6. Statistical Evidence
+
+{model_line}
+
+The detailed statistical tests, descriptive summaries, model comparisons, and diagnostic values are included in the appendix. P-values are supporting evidence for specific tests; they are not used alone to rank findings. Observational associations do not establish causes.
+
+## 7. Data Quality
+
+- **Data-quality score:** {result_payload.get("health_score", 0)}/100 (a heuristic, not proof of validity).
+- **Missing values:** {int(missing.get("total_missing_cells", 0)):,} cells ({missing.get("overall_missing_percentage", 0)}% of cells); {missing.get("complete_rows_percentage", 100)}% of rows are complete.
+- **Duplicate rows:** {int(duplicates.get("duplicate_rows_count", 0)):,} ({duplicates.get("duplicate_rows_percentage", 0)}%).
+- **Potential extreme values:** {int(outliers.get("total_iqr_outliers", 0)):,} observations flagged across numeric fields; these may be valid.
+
+## 8. Methodology
+
+All displayed findings are computed in Python from the uploaded dataset using deterministic, bounded analyses. Dates are ordered by parsed timestamps and repeated periods are aggregated. Group and relationship findings include their sample coverage and explicit limitations. Model results are compared with a simple baseline and remain specific to the selected validation split.
+
+## 9. Limitations
+
+This is descriptive analysis unless a finding is explicitly labeled as an association or prediction. It does not identify causal effects. Missingness, irregular sampling, small samples, unmeasured factors, and data collection choices can affect conclusions. Review the detailed statistical assumptions and validation results before making consequential decisions.
+
+## Appendix. Full statistical evidence and diagnostics
+
+{appendix}
+
+---
+*Infera: Turn data into evidence. Computed with Python; no paid AI service is used.*
+"""
+
+
+def _render_chart_html(chart: dict[str, object] | None) -> str:
+    if not chart:
+        return ""
+    points = chart.get("points", [])
+    if not isinstance(points, list) or not points:
+        return ""
+    parsed = []
+    for point in points:
+        if not isinstance(point, dict):
+            continue
+        try:
+            parsed.append((point.get("x", ""), float(point["y"])))
+        except (KeyError, TypeError, ValueError):
+            continue
+    if not parsed:
+        return ""
+
+    def number_label(value: float) -> str:
+        if abs(value) >= 1_000:
+            return f"{value:,.2f}".rstrip("0").rstrip(".")
+        return f"{value:.4g}"
+
+    width, height = 680, 250
+    left, top, right, bottom = 54, 14, 12, 40
+    plot_width, plot_height = width - left - right, height - top - bottom
+    values = [value for _, value in parsed]
+    ymin, ymax = min(values), max(values)
+    if ymax == ymin:
+        padding = max(abs(ymax) * 0.1, 1)
+    else:
+        padding = (ymax - ymin) * 0.12
+    kind = str(chart.get("kind", "bar"))
+    if kind in {"bar", "histogram"}:
+        ymin, ymax = min(0.0, ymin - padding), max(0.0, ymax + max(padding, abs(ymax) * 0.08))
+    else:
+        ymin, ymax = ymin - padding, ymax + padding
+    y_range = ymax - ymin or 1.0
+
+    date_values: list[float] = []
+    if kind == "line" and all(
+        isinstance(label, str) and re.match(r"^\d{4}-\d{2}-\d{2}T", label)
+        for label, _ in parsed
+    ):
+        try:
+            date_values = [
+                datetime.fromisoformat(str(label).replace("Z", "+00:00")).timestamp()
+                for label, _ in parsed
+            ]
+        except ValueError:
+            date_values = []
+    numeric_values: list[float] = []
+    if kind == "scatter":
+        try:
+            numeric_values = [float(label) for label, _ in parsed]
+        except (TypeError, ValueError):
+            numeric_values = []
+
+    def px(index: int) -> float:
+        if len(parsed) == 1:
+            return left + plot_width / 2
+        if date_values:
+            minimum, maximum = min(date_values), max(date_values)
+            return left + ((date_values[index] - minimum) / (maximum - minimum or 1)) * plot_width
+        if numeric_values:
+            minimum, maximum = min(numeric_values), max(numeric_values)
+            return left + ((numeric_values[index] - minimum) / (maximum - minimum or 1)) * plot_width
+        return left + index * plot_width / (len(parsed) - 1)
+
+    def py(value: float) -> float:
+        return top + (ymax - value) * plot_height / y_range
+
+    marks = []
+    count_chart = kind in {"bar", "histogram"}
+    bar_width = max(4.0, min(34.0, plot_width / len(parsed) * 0.6))
+    baseline = py(0.0)
+    for index, (label, value) in enumerate(parsed):
+        tooltip = html.escape(f"{chart.get('x_label', 'Value')}: {label}; {chart.get('y_label', 'Value')}: {number_label(value)}")
+        if count_chart:
+            top_y = min(py(value), baseline)
+            bar_height = max(1.0, abs(baseline - py(value)))
+            marks.append(
+                f'<rect x="{px(index) - bar_width / 2:.1f}" y="{top_y:.1f}" width="{bar_width:.1f}" height="{bar_height:.1f}" rx="3" fill="#0891b2"><title>{tooltip}</title></rect>'
+            )
+        else:
+            marks.append(
+                f'<circle cx="{px(index):.1f}" cy="{py(value):.1f}" r="3.5" fill="#0891b2"><title>{tooltip}</title></circle>'
+            )
+    if kind == "line" and len(parsed) > 1:
+        path = " ".join(
+            f"{'M' if index == 0 else 'L'}{px(index):.1f},{py(value):.1f}"
+            for index, (_, value) in enumerate(parsed)
+        )
+        marks.insert(0, f'<path d="{path}" fill="none" stroke="#0891b2" stroke-width="2.5"/>')
+    title = html.escape(str(chart.get("title", "Computed chart")))
+    x_label = html.escape(str(chart.get("x_label", "")))
+    y_label = html.escape(str(chart.get("y_label", "")))
+    ticks = []
+    for index in range(5):
+        value = ymin + y_range * (4 - index) / 4
+        position = py(value)
+        ticks.append(
+            f'<line x1="{left}" x2="{width - right}" y1="{position:.1f}" y2="{position:.1f}" stroke="#e2e8f0" stroke-dasharray="3 4"/><text x="{left - 7}" y="{position + 4:.1f}" text-anchor="end" fill="#64748b" font-size="10">{number_label(value)}</text>'
+        )
+    x_ticks = []
+    tick_count = min(4, len(parsed) - 1)
+    tick_indices = sorted({round(i * (len(parsed) - 1) / tick_count) for i in range(tick_count + 1)}) if tick_count else [0]
+    for index in tick_indices:
+        label = str(parsed[index][0])
+        if date_values:
+            try:
+                label = datetime.fromisoformat(label.replace("Z", "+00:00")).strftime("%b %Y")
+            except ValueError:
+                pass
+        label = label if len(label) <= 16 else f"{label[:15]}…"
+        x_ticks.append(
+            f'<text x="{px(index):.1f}" y="{height-bottom+16}" text-anchor="middle" fill="#64748b" font-size="9">{html.escape(label)}</text>'
+        )
+    return f"""<figure style="margin:1rem 0;padding:0.75rem;border:1px solid #e2e8f0;border-radius:10px;background:#fff">
+      <figcaption style="font-weight:600;font-size:.9rem;margin-bottom:.35rem">{title}</figcaption>
+      <svg viewBox="0 0 {width} {height}" role="img" aria-label="{title}. Horizontal axis: {x_label}. Vertical axis: {y_label}.">
+        {''.join(ticks)}<line x1="{left}" x2="{left}" y1="{top}" y2="{height-bottom}" stroke="#64748b"/><line x1="{left}" x2="{width-right}" y1="{height-bottom}" y2="{height-bottom}" stroke="#64748b"/>
+        {''.join(marks)}{''.join(x_ticks)}
+        <text x="{left+plot_width/2:.1f}" y="{height-5}" text-anchor="middle" fill="#475569" font-size="11">{x_label}</text>
+        <text x="13" y="{top+plot_height/2:.1f}" transform="rotate(-90 13 {top+plot_height/2:.1f})" text-anchor="middle" fill="#475569" font-size="11">{y_label}</text>
+      </svg>
+    </figure>"""
+
+
 def generate_html_report(result_payload: dict) -> str:
     """Generates a standalone, beautifully styled HTML report ready for printing or viewing."""
     dataset_name = html.escape(str(result_payload.get("dataset_name", "Uploaded Dataset")))
     health = int(result_payload.get("health_score", 100))
-    schema = result_payload.get("schema", {})
-    problem = result_payload.get("problem_detection", {})
+    discovery = result_payload.get("insight_discovery", {})
     models = result_payload.get("modeling", {})
-    insights = result_payload.get("insights", [])
+    findings = discovery.get("key_findings", [])
 
     now_str = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
 
-    insights_html = ""
-    for ins in insights:
-        title = html.escape(str(ins.get("title", "")))
-        plain_english = html.escape(str(ins.get("plain_english", "")))
-        calc_details = html.escape(str(ins.get("calculation_details", "")))
-        insights_html += f"""
-        <div style="margin-bottom: 1.5rem; padding: 1rem; border-left: 4px solid #2563eb; background: #f8fafc; border-radius: 4px;">
-            <h4 style="margin: 0 0 0.5rem 0; color: #1e293b; font-size: 1.05rem;">{title}</h4>
-            <p style="margin: 0 0 0.5rem 0; color: #475569; line-height: 1.5;">{plain_english}</p>
-            <small style="color: #64748b; font-family: monospace;">Evidence: {calc_details}</small>
-        </div>
+    findings_html = ""
+    for finding in findings:
+        title = html.escape(str(finding.get("title", "")))
+        summary = html.escape(str(finding.get("summary", "")))
+        interpretation = html.escape(str(finding.get("interpretation", "")))
+        limitation = html.escape(str(finding.get("limitation", "")))
+        evidence = finding.get("evidence", {})
+        evidence_html = "".join(
+            f"<li><strong>{html.escape(str(key).replace('_', ' '))}:</strong> {html.escape(str(value))}</li>"
+            for key, value in evidence.items()
+        )
+        findings_html += f"""
+        <article style="margin-bottom:1.25rem;padding:1rem 1.1rem;border:1px solid #dbeafe;border-radius:12px;background:#f8fafc">
+          <p style="margin:0 0 .35rem;color:#0e7490;font-size:.72rem;text-transform:uppercase;font-weight:700;letter-spacing:.08em">{html.escape(str(finding.get('category', 'finding')))} · {html.escape(str(finding.get('confidence', 'exploratory')))} evidence</p>
+          <h3 style="margin:.25rem 0;color:#0f172a;font-size:1.15rem">{title}</h3>
+          <p style="margin:.35rem 0;color:#334155">{summary}</p>
+          <p style="margin:.35rem 0;color:#475569;font-size:.9rem">{interpretation}</p>
+          {_render_chart_html(finding.get('chart'))}
+          <details><summary style="cursor:pointer;color:#334155;font-size:.85rem">Computed evidence and limitation</summary>
+            <ul style="line-height:1.7;color:#334155">{evidence_html}</ul>
+            <p style="color:#64748b;font-size:.85rem"><strong>Limitation:</strong> {limitation}</p>
+          </details>
+        </article>
         """
 
     table_rows = ""
@@ -247,12 +511,6 @@ def generate_html_report(result_payload: dict) -> str:
             </tr>
             """
 
-    target_col = html.escape(str(problem.get("target_column") or "None"))
-    reason_text = html.escape(str(problem.get("reason", "")))
-    problem_type_str = html.escape(
-        str(problem.get("problem_type", "Exploratory")).replace("_", " ").title()
-    )
-
     icon_svg = Path(__file__).with_name("infera-icon.svg").read_text()
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -276,15 +534,18 @@ def generate_html_report(result_payload: dict) -> str:
         <p style="color: #64748b; margin: 4px 0;"><strong>Dataset:</strong> {dataset_name} | <strong>Generated:</strong> {now_str} | <span class="badge">Health Score: {health}/100</span></p>
     </div>
 
-    <h2>Executive Overview</h2>
+    <h2>Executive Summary</h2>
     <div class="metric-card">
-        <p><strong>Dataset Shape:</strong> {schema.get("row_count", 0):,} rows &times; {schema.get("column_count", 0)} columns</p>
-        <p><strong>Detected Problem:</strong> {problem_type_str} on target <code>{target_col}</code></p>
-        <p><strong>Objective Rationale:</strong> {reason_text}</p>
+        <p>{html.escape(str(discovery.get("dataset_overview", "Evidence computed from the uploaded dataset.")))}</p>
+        <p><strong>{html.escape(str(discovery.get("status", "No strong finding was identified.")))}</strong></p>
     </div>
 
-    <h2>Benchmarking & Model Comparison</h2>
-    <table>
+    <h2>Key Findings</h2>
+    {findings_html or "<p>No well-supported pattern was identified for this dataset.</p>"}
+
+    <details style="margin:1.5rem 0">
+      <summary style="cursor:pointer;font-weight:600">Statistical and model comparison tables</summary>
+      <table>
         <thead>
             <tr>
                 <th>Model</th>
@@ -294,13 +555,13 @@ def generate_html_report(result_payload: dict) -> str:
         <tbody>
             {table_rows or "<tr><td colspan='4'>Exploratory analysis only.</td></tr>"}
         </tbody>
-    </table>
+      </table>
+    </details>
 
-    <h2>Evidence-Backed Insights</h2>
-    {insights_html}
-
-    <h2>Complete Evidence and Methodology</h2>
-    <pre style="white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; padding: 16px; background: #f8fafc;">{html.escape(generate_markdown_report(result_payload))}</pre>
+    <details style="margin:1.5rem 0">
+      <summary style="cursor:pointer;font-weight:600">Open the full statistical report and limitations</summary>
+      <pre style="white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; padding: 16px; background: #f8fafc;">{html.escape(generate_markdown_report(result_payload))}</pre>
+    </details>
 
     <footer style="margin-top: 50px; border-top: 1px solid #e2e8f0; padding-top: 20px; color: #94a3b8; font-size: 0.85rem; text-align: center;">
         Infera : Turn data into evidence. Computed via Python. Created and maintained independently by Aritra Saha. MIT License.

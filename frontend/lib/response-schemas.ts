@@ -14,6 +14,35 @@ const regression = z.object({ ...modelBase, r2_test: n, mae_test: n, mse_test: n
 const classification = z.object({ ...modelBase, accuracy_test: n, precision_macro: n, recall_macro: n, f1_macro: n, f1_weighted: n, roc_auc: n.nullable(), cv_score_mean: n.nullable(), cv_score_std: n.nullable(), confusion_matrix: z.array(z.array(n)), confusion_matrix_labels: z.array(s) });
 const cluster = z.object({ algorithm_name: s, num_clusters: n, silhouette: n.nullable(), noise_count: n, cluster_profiles: z.array(z.object({ cluster_id: n, name: s, size: n, percentage: n, feature_means: z.record(s, n) })), scatter_2d: z.array(z.object({ pca_x: n, pca_y: n, cluster: n, cluster_label: s })) });
 const pair = z.object({ feature_a: s, feature_b: s, pearson_r: n, pearson_p_value: n, spearman_rho: n, spearman_p_value: n, strength: s, direction: s, is_statistically_significant: z.boolean(), plain_english: s, evidence_summary: record });
+const insightChart = z.object({
+  kind: z.enum(["line", "bar", "histogram", "scatter"]),
+  title: s,
+  x_label: s,
+  y_label: s,
+  points: z.array(z.object({ x: z.union([s, n]), y: n, detail: s.nullable().optional() })),
+});
+const keyFinding = z.object({
+  id: s,
+  category: z.enum(["time", "group", "relationship", "distribution", "model"]),
+  finding_type: z.enum(["observed", "association", "prediction"]),
+  title: s,
+  summary: s,
+  interpretation: s,
+  limitation: s,
+  confidence: z.enum(["high", "moderate", "exploratory"]),
+  evidence: record,
+  chart: insightChart.nullable(),
+});
+const insightFocus = z.object({ metric_column: s.nullable(), date_column: s.nullable(), group_column: s.nullable(), question: z.enum(["automatic", "time", "groups", "relationships", "distributions"]) });
+const insightDiscovery = z.object({
+  dataset_overview: s,
+  status: s,
+  selected_focus: insightFocus,
+  options: z.object({ metric_columns: z.array(s), date_columns: z.array(s), group_columns: z.array(s) }),
+  important_metrics: z.array(z.object({ label: s, value: s, detail: s })),
+  key_findings: z.array(keyFinding),
+  suggested_questions: z.array(s),
+});
 export const analysisSchema = z.object({
   dataset_id: s, dataset_name: s, health_score: n,
   schema: z.object({ row_count: n, column_count: n, memory_formatted: s, columns: z.array(column), numerical_columns: z.array(s), categorical_columns: z.array(s), datetime_columns: z.array(s), text_columns: z.array(s), constant_columns: z.array(s), high_cardinality_columns: z.array(s), id_columns: z.array(s), potential_targets: z.array(target) }),
@@ -36,5 +65,6 @@ export const analysisSchema = z.object({
   pca: z.object({ features_analyzed: z.array(s), explained_variance_ratio: z.array(n), cumulative_variance_explained: n, loadings: z.array(z.object({ feature: s, pc1_loading: n, pc2_loading: n })), points_2d: z.array(z.object({ pc1: n, pc2: n })), summary: s, sample_count: n, excluded_missing_rows: n }).nullable(),
   timeseries: z.object({ datetime_column: s, metric_column: s, total_observations: n, adf_statistic: n.nullable(), adf_p_value: n.nullable(), is_stationary: z.boolean().nullable(), critical_values: z.record(s, n), stationarity_interpretation: s, lag_autocorrelations: z.array(z.object({ lag: n, autocorrelation: n })), chart_series: z.array(z.object({ timestamp: s, value: n })), trend_summary: s }).nullable(),
   insights: z.array(z.object({ id: s, category: s, title: s, summary: s, plain_english: s, confidence: s, evidence: record, calculation_details: s })),
+  insight_discovery: insightDiscovery,
   preview_rows: z.array(z.record(s, scalar)).optional(), reports: z.object({ markdown: s, html: s }),
 });

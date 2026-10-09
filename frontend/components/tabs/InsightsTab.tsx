@@ -30,10 +30,10 @@ export function InsightsTab({ data }: InsightsTabProps) {
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <Sparkles className="w-5 h-5 text-blue-400" />
-              <h3 className="text-base font-semibold text-white">Traceable, Evidence-Backed Insights</h3>
+              <h3 className="text-base font-semibold text-white">Detailed statistical evidence</h3>
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              Zero invented statistics. Every claim originates strictly from Python calculations with verifiable formulas and p-values.
+              Inspect the calculations, evidence values, formulas, and p-values behind the statistical analysis. Key Findings highlights the most relevant patterns first.
             </p>
           </div>
 

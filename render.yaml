@@ -4,6 +4,12 @@ services:
     runtime: python
     region: oregon
     plan: free
+    autoDeployTrigger: commit
+    buildFilter:
+      paths:
+        - backend/**
+        - render.yaml
+      ignoredPaths: []
     buildCommand: "cd backend && pip install -r requirements.txt && pip install --no-deps ."
     startCommand: "cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1"
     healthCheckPath: /health

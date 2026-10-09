@@ -12,7 +12,12 @@ import { ApiError, errorMessage, fetchHealth } from "@/lib/api";
 import { Loader2, RefreshCw, Radio, TriangleAlert } from "lucide-react";
 
 export type EngineState =
-  "CHECKING" | "STARTING" | "CONNECTED" | "DEGRADED" | "UNAVAILABLE";
+  | "CHECKING"
+  | "STARTING"
+  | "CONNECTED"
+  | "TEMPORARILY_UNAVAILABLE"
+  | "DEPLOYMENT_FAILURE"
+  | "INCOMPATIBLE_RESPONSE";
 type Connection = {
   state: EngineState;
   error: string | null;
@@ -20,7 +25,8 @@ type Connection = {
   retry: () => void;
 };
 const Context = createContext<Connection | null>(null);
-const backoff = [1500, 4000, 8000];
+const backoff = [2000, 4000, 8000, 12000, 16000, 20000, 20000, 20000];
+const maxStartupMs = 120000;
 
 function pause(ms: number, signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
@@ -49,6 +55,7 @@ export function EngineProvider({ children }: { children: React.ReactNode }) {
     const controller = new AbortController();
     running.current = controller;
     const { signal } = controller;
+    const deadline = Date.now() + maxStartupMs;
     setStatus({ state: "CHECKING", error: null, attempt: 1 });
     const waking = setTimeout(() => {
       if (!signal.aborted)
@@ -58,23 +65,35 @@ export function EngineProvider({ children }: { children: React.ReactNode }) {
     }, 4000);
     void (async () => {
       try {
-        for (let attempt = 1; attempt <= 4; attempt++) {
+        for (let attempt = 1; attempt <= backoff.length + 1; attempt++) {
+          const remaining = deadline - Date.now();
+          if (remaining <= 0) {
+            setStatus({
+              state: "TEMPORARILY_UNAVAILABLE",
+              error: "The analysis engine did not become ready within two minutes.",
+              attempt: attempt - 1,
+            });
+            return;
+          }
           try {
-            await fetchHealth(signal);
+            await fetchHealth(signal, Math.min(25000, remaining));
             if (signal.aborted) return;
             lastSuccess.current = Date.now();
             setStatus({ state: "CONNECTED", error: null, attempt });
             return;
           } catch (error) {
             if (signal.aborted) return;
-            const transient =
-              error instanceof ApiError && error.kind === "transient";
-            if (!transient || attempt === 4) {
+            const transient = error instanceof ApiError && error.kind === "transient";
+            if (!transient || attempt === backoff.length + 1) {
+              const state: EngineState =
+                error instanceof ApiError && error.kind === "incompatible"
+                  ? "INCOMPATIBLE_RESPONSE"
+                  : error instanceof ApiError &&
+                      ["configuration", "deployment", "http"].includes(error.kind)
+                    ? "DEPLOYMENT_FAILURE"
+                    : "TEMPORARILY_UNAVAILABLE";
               setStatus({
-                state:
-                  error instanceof ApiError && error.kind === "schema"
-                    ? "DEGRADED"
-                    : "UNAVAILABLE",
+                state,
                 error: errorMessage(error),
                 attempt,
               });
@@ -85,7 +104,7 @@ export function EngineProvider({ children }: { children: React.ReactNode }) {
               error: errorMessage(error),
               attempt: attempt + 1,
             });
-            await pause(backoff[attempt - 1], signal);
+            await pause(Math.min(backoff[attempt - 1], Math.max(0, deadline - Date.now())), signal);
           }
         }
       } finally {
@@ -131,8 +150,9 @@ const labels: Record<EngineState, string> = {
   CHECKING: "Checking engine",
   STARTING: "Starting the analysis engine",
   CONNECTED: "Engine connected",
-  DEGRADED: "Engine response incompatible",
-  UNAVAILABLE: "Engine unavailable",
+  TEMPORARILY_UNAVAILABLE: "Engine temporarily unavailable",
+  DEPLOYMENT_FAILURE: "Backend deployment problem",
+  INCOMPATIBLE_RESPONSE: "Backend response incompatible",
 };
 
 export function EngineIndicator() {
@@ -160,6 +180,18 @@ export function EngineBanner() {
   const { state, error, attempt, retry } = useEngine();
   if (state === "CONNECTED") return null;
   const waiting = state === "CHECKING" || state === "STARTING";
+  const explanation =
+    state === "CHECKING"
+      ? "Checking the configured FastAPI service."
+      : state === "STARTING"
+          ? "The free Render instance may be waking. Bounded health checks allow up to two minutes for a cold start."
+        : state === "TEMPORARILY_UNAVAILABLE"
+          ? `${error ?? "The backend did not respond."} Automatic checks have stopped; retry when you are ready.`
+          : state === "DEPLOYMENT_FAILURE"
+            ? error ?? "The backend URL or /health deployment configuration needs attention."
+            : state === "INCOMPATIBLE_RESPONSE"
+              ? error ?? "The backend response does not match this frontend version."
+              : "";
   return (
     <div
       className={`engine-banner ${waiting ? "" : "engine-error"}`}
@@ -172,14 +204,10 @@ export function EngineBanner() {
       )}
       <div className="flex-1">
         <p className="font-medium text-sm">{labels[state]}</p>
-        <p className="text-xs text-slate-400 mt-1">
-          {waiting
-            ? "The free analysis server may need a moment to wake up."
-            : error}
-        </p>
+        <p className="text-xs text-slate-400 mt-1">{explanation}</p>
         {state === "STARTING" && (
           <p className="text-xs text-slate-400 mt-1">
-            Attempt {attempt} of 4. This check stops after about two minutes.
+            Health check {attempt} of 9. This retry sequence stops on its own.
           </p>
         )}
       </div>
