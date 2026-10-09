@@ -308,7 +308,13 @@ export type InsightQuestion =
   | "time"
   | "groups"
   | "relationships"
-  | "distributions";
+  | "distributions"
+  | "trends"
+  | "compare_groups"
+  | "predict_outcome"
+  | "explore_everything"
+  | "discover_insights"
+  | (string & {});
 
 export interface AnalysisFocus {
   metric_column?: string | null;
@@ -333,8 +339,8 @@ export interface InsightChartData {
 
 export interface KeyFinding {
   id: string;
-  category: "time" | "group" | "relationship" | "distribution" | "model";
-  finding_type: "observed" | "association" | "prediction";
+  category: "time" | "group" | "relationship" | "distribution" | "model" | (string & {});
+  finding_type: "observed" | "association" | "prediction" | (string & {});
   title: string;
   summary: string;
   interpretation: string;
@@ -348,6 +354,7 @@ export interface InsightDiscovery {
   dataset_overview: string;
   status: string;
   selected_focus: Required<AnalysisFocus>;
+  goal?: string | null;
   options: {
     metric_columns: string[];
     date_columns: string[];

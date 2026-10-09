@@ -3,13 +3,22 @@
 import { useState } from "react";
 import { AnalysisFocus, AnalysisResponse, InsightQuestion, KeyFinding } from "@/lib/types";
 import { InsightChart } from "@/components/charts/InsightChart";
-import { ChevronDown, Database, ShieldCheck, Sparkles, Target, TrendingUp } from "lucide-react";
+import { ChevronDown, Compass, Database, ShieldCheck, Sparkles, Target, TrendingUp } from "lucide-react";
 
 interface OverviewTabProps {
   data: AnalysisResponse;
   onSelectTarget?: (target: string) => void;
   onApplyFocus?: (focus: AnalysisFocus) => Promise<void>;
 }
+
+const goalLabels: Record<string, string> = {
+  discover_insights: "Discover Insights",
+  trends: "Trends over Time",
+  compare_groups: "Compare Groups",
+  relationships: "Explore Relationships",
+  predict_outcome: "Predict Outcome",
+  explore_everything: "Explore Everything",
+};
 
 const questions: { value: InsightQuestion; label: string }[] = [
   { value: "automatic", label: "Let Infera choose" },
@@ -133,9 +142,17 @@ export function OverviewTab({ data, onSelectTarget, onApplyFocus }: OverviewTabP
   return (
     <div className="space-y-7">
       <section aria-labelledby="dataset-overview-title" className="overflow-hidden rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 via-slate-900 to-cyan-950/30 p-5 sm:p-7">
-        <div className="flex items-center gap-2 text-cyan-300">
-          <Sparkles size={18} />
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em]">Dataset overview</p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-cyan-300">
+            <Sparkles size={18} />
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em]">Dataset overview</p>
+          </div>
+          {discovery.goal && (
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-blue-950/90 border border-blue-800 text-cyan-200">
+              <Compass size={12} className="text-cyan-400" />
+              <span>Goal: {goalLabels[discovery.goal] || discovery.goal}</span>
+            </span>
+          )}
         </div>
         <h3 id="dataset-overview-title" className="mt-3 text-xl font-semibold text-white">What this data contains</h3>
         <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-300">{discovery.dataset_overview}</p>

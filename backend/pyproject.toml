@@ -1,6 +1,6 @@
 [project]
 name = "infera-backend"
-version = "0.1.0"
+version = "0.4.0"
 description = "Infera Automated Data Science Platform backend engine and API"
 readme = "README.md"
 requires-python = ">=3.12"

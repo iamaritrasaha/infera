@@ -23,8 +23,8 @@ const insightChart = z.object({
 });
 const keyFinding = z.object({
   id: s,
-  category: z.enum(["time", "group", "relationship", "distribution", "model"]),
-  finding_type: z.enum(["observed", "association", "prediction"]),
+  category: s,
+  finding_type: s,
   title: s,
   summary: s,
   interpretation: s,
@@ -33,7 +33,13 @@ const keyFinding = z.object({
   evidence: record,
   chart: insightChart.nullable(),
 });
-const insightFocus = z.object({ metric_column: s.nullable(), date_column: s.nullable(), group_column: s.nullable(), question: z.enum(["automatic", "time", "groups", "relationships", "distributions"]) });
+const insightFocus = z.object({
+  metric_column: s.nullable(),
+  date_column: s.nullable(),
+  group_column: s.nullable(),
+  question: s,
+  goal: s.nullable().optional(),
+});
 const insightDiscovery = z.object({
   dataset_overview: s,
   status: s,

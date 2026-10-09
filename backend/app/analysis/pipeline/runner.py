@@ -16,6 +16,7 @@ from app.analysis.pipeline.planner import SkippedAnalysis, plan_analyses
 from app.analysis.pipeline.validator import prepare_supervised_data
 from app.analysis.profiler.cardinality import CardinalityProfile, analyze_cardinality
 from app.analysis.profiler.duplicates import DuplicateProfile, analyze_duplicates
+from app.analysis.profiler.health import compute_health_score
 from app.analysis.profiler.missing import MissingProfile, analyze_missing_values
 from app.analysis.profiler.outliers import OutlierProfile, analyze_outliers
 from app.analysis.profiler.schema import inspect_schema
@@ -38,22 +39,6 @@ class QualityProfile:
     health_score: int  # 0 to 100
 
 
-def compute_health_score(
-    missing: MissingProfile,
-    duplicates: DuplicateProfile,
-    outliers: OutlierProfile,
-) -> int:
-    """Computes a deterministic 0-100 data hygiene score."""
-    score = 100.0
-    # Penalty for missing data
-    score -= missing.overall_missing_percentage * 1.5
-    # Penalty for duplicate rows
-    score -= duplicates.duplicate_rows_percentage * 2.0
-    # Penalty for outliers
-    score -= min(15.0, outliers.total_iqr_outliers * 0.15)
-    return max(0, min(100, int(round(score))))
-
-
 def run_full_analysis(
     df: pd.DataFrame,
     dataset_name: str = "Dataset",
@@ -62,6 +47,7 @@ def run_full_analysis(
     date_column: str | None = None,
     group_column: str | None = None,
     question: Question = "automatic",
+    goal: str | None = None,
 ) -> dict:
     """Orchestrates comprehensive profiling, statistics, ML benchmarking, and insight generation."""
     # 1. Schema & Profiling
@@ -224,6 +210,7 @@ def run_full_analysis(
         date_column=date_column,
         group_column=group_column,
         question=question,
+        goal=goal,
         modeling=modeling_result,
     )
     payload = {

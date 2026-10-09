@@ -2,8 +2,8 @@
 
 import pandas as pd
 
-from app.analysis.pipeline.runner import compute_health_score
 from app.analysis.profiler.duplicates import analyze_duplicates
+from app.analysis.profiler.health import compute_health_score
 from app.analysis.profiler.missing import analyze_missing_values
 from app.analysis.profiler.outliers import analyze_outliers
 from app.analysis.profiler.schema import inspect_schema

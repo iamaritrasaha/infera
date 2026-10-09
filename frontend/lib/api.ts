@@ -86,6 +86,7 @@ export class ApiError extends Error {
       | "configuration"
       | "incompatible"
       | "deployment"
+      | "offline"
       | "http",
     public readonly status?: number,
   ) {
@@ -109,6 +110,12 @@ async function request(
   timeoutMs = 125000,
   signal?: AbortSignal,
 ): Promise<Response> {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    throw new ApiError(
+      "Your browser appears to be offline. Check your network connection.",
+      "offline",
+    );
+  }
   const base = apiBase();
   const headers = new Headers(init.headers);
   if (owned) headers.set("X-Infera-Session", sessionToken());
@@ -201,18 +208,36 @@ async function json<T>(response: Response, schema: z.ZodType<T>): Promise<T> {
     return schema.parse(await response.json());
   } catch {
     throw new ApiError(
-      "The backend responded, but its health or analysis response does not match this frontend version. Deploy compatible frontend and backend revisions.",
+      "The backend responded, but its health or analysis response does not match this frontend version (incompatible). Deploy compatible frontend and backend revisions.",
       "incompatible",
     );
   }
 }
-export async function fetchHealth(signal?: AbortSignal, timeoutMs = 25000) {
+export async function fetchHealth(signal?: AbortSignal, timeoutMs = 45000) {
   return json(
     await request("/health", {}, false, timeoutMs, signal),
+    z.object({
+      status: z.union([z.literal("ok"), z.literal("degraded")]),
+      project: z.literal("Infera"),
+      version: z.string(),
+      engine_status: z.string().optional(),
+      timestamp: z.number().optional(),
+    }),
+  );
+}
+
+export async function fetchDiagnostics() {
+  return json(
+    await request("/api/diagnostic", {}, false, 15000),
     z.object({
       status: z.literal("ok"),
       project: z.literal("Infera"),
       version: z.string(),
+      uptime_seconds: z.number(),
+      memory_mb: z.number().nullable().optional(),
+      python_version: z.string(),
+      max_concurrent_analyses: z.number(),
+      environment: z.string(),
     }),
   );
 }
@@ -250,6 +275,7 @@ export async function executeFullAnalysis(
   datasetId: string,
   targetColumn?: string,
   focus: AnalysisFocus = { question: "automatic" },
+  goal?: string,
 ): Promise<AnalysisResponse> {
   return json(
     await request(
@@ -264,6 +290,7 @@ export async function executeFullAnalysis(
           date_column: focus.date_column || null,
           group_column: focus.group_column || null,
           question: focus.question,
+          goal: goal || null,
         }),
       },
       true,

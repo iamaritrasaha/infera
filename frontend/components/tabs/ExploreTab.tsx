@@ -4,14 +4,22 @@ import React, { useState } from "react";
 import { AnalysisResponse } from "@/lib/types";
 import { CorrelationHeatmap } from "@/components/charts/CorrelationHeatmap";
 import { HistogramChart } from "@/components/charts/HistogramChart";
-import { ArrowDownRight, ArrowUpRight, BarChart2, Hash, Layers } from "lucide-react";
+import {
+  ArrowDownRight,
+  ArrowUpRight,
+  BarChart2,
+  GitCompare,
+  Hash,
+  Layers,
+  Sparkles,
+} from "lucide-react";
 
 interface ExploreTabProps {
   data: AnalysisResponse;
 }
 
 export function ExploreTab({ data }: ExploreTabProps) {
-  const { descriptive_statistics, correlations } = data;
+  const { descriptive_statistics, correlations, schema, insight_discovery } = data;
   const numDist = descriptive_statistics.numerical;
   const catDist = descriptive_statistics.categorical;
 
@@ -22,11 +30,187 @@ export function ExploreTab({ data }: ExploreTabProps) {
     catDist[0]?.column || ""
   );
 
+  // Two-variable comparison state
+  const [compareVarA, setCompareVarA] = useState<string>(
+    schema.numerical_columns[0] || ""
+  );
+  const [compareVarB, setCompareVarB] = useState<string>(
+    schema.numerical_columns[1] || schema.categorical_columns[0] || ""
+  );
+
   const currentNum = numDist.find((d) => d.column === selectedNumCol) || numDist[0];
   const currentCat = catDist.find((d) => d.column === selectedCatCol) || catDist[0];
 
+  // Bivariate relationship between compareVarA and compareVarB
+  const idxA = correlations?.columns?.indexOf(compareVarA) ?? -1;
+  const idxB = correlations?.columns?.indexOf(compareVarB) ?? -1;
+  const corrValue =
+    idxA >= 0 &&
+    idxB >= 0 &&
+    correlations?.pearson_matrix?.[idxA]?.[idxB] !== undefined &&
+    correlations?.pearson_matrix?.[idxA]?.[idxB] !== null
+      ? correlations.pearson_matrix[idxA][idxB]
+      : null;
+
+  const matchingTopCorr = correlations?.top_correlations?.find(
+    (c) =>
+      (c.feature_a === compareVarA && c.feature_b === compareVarB) ||
+      (c.feature_a === compareVarB && c.feature_b === compareVarA)
+  );
+
+  const handleQuestionClick = (question: string) => {
+    // Attempt to match column names mentioned in question
+    const lower = question.toLowerCase();
+    const matchedNum = numDist.find((n) => lower.includes(n.column.toLowerCase()));
+    if (matchedNum) setSelectedNumCol(matchedNum.column);
+
+    const matchedCat = catDist.find((c) => lower.includes(c.column.toLowerCase()));
+    if (matchedCat) setSelectedCatCol(matchedCat.column);
+
+    const matchedCols = schema.columns.filter((c) =>
+      lower.includes(c.name.toLowerCase())
+    );
+    if (matchedCols.length >= 2) {
+      setCompareVarA(matchedCols[0].name);
+      setCompareVarB(matchedCols[1].name);
+    } else if (matchedCols.length === 1) {
+      if (schema.numerical_columns.includes(matchedCols[0].name)) {
+        setCompareVarA(matchedCols[0].name);
+      } else {
+        setCompareVarB(matchedCols[0].name);
+      }
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {/* Quick Suggested Question Chips (Phase 10) */}
+      {insight_discovery.suggested_questions.length > 0 && (
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+          <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-white">
+            <Sparkles className="w-3.5 h-3.5 text-cyan-300" />
+            <span>Suggested Analytical Questions</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {insight_discovery.suggested_questions.map((q) => (
+              <button
+                key={q}
+                type="button"
+                onClick={() => handleQuestionClick(q)}
+                className="text-left text-xs px-3 py-1.5 rounded-lg bg-slate-950/70 border border-slate-800 hover:border-cyan-500/50 hover:bg-slate-900 text-slate-300 hover:text-white transition-colors"
+              >
+                {q} &rarr;
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Interactive Two-Variable Comparison Explorer (Phase 10) */}
+      <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h3 className="text-base font-semibold text-white flex items-center gap-2">
+              <GitCompare className="w-4 h-4 text-cyan-400" /> Two-Variable Interactive Comparison
+            </h3>
+            <p className="text-xs text-slate-400">
+              Select two features to inspect joint distribution, correlation, or group differences.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5 text-xs text-slate-300">
+              <span className="text-slate-500 text-[11px]">Var X:</span>
+              <select
+                aria-label="First variable"
+                value={compareVarA}
+                onChange={(e) => setCompareVarA(e.target.value)}
+                className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-cyan-500 font-medium"
+              >
+                {schema.columns.map((c) => (
+                  <option key={c.name} value={c.name}>
+                    {c.name} ({c.inferred_type})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <span className="text-slate-500 text-xs">&times;</span>
+
+            <div className="flex items-center gap-1.5 text-xs text-slate-300">
+              <span className="text-slate-500 text-[11px]">Var Y:</span>
+              <select
+                aria-label="Second variable"
+                value={compareVarB}
+                onChange={(e) => setCompareVarB(e.target.value)}
+                className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-cyan-500 font-medium"
+              >
+                {schema.columns.map((c) => (
+                  <option key={c.name} value={c.name}>
+                    {c.name} ({c.inferred_type})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Comparison Result Panel */}
+        <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-4">
+          {compareVarA === compareVarB ? (
+            <p className="text-xs text-slate-400">
+              Select two distinct variables to evaluate bivariate associations.
+            </p>
+          ) : corrValue !== null ? (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-white">
+                    {compareVarA} &times; {compareVarB}
+                  </span>
+                  <span className="text-[10px] uppercase px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800">
+                    Numeric Association
+                  </span>
+                </div>
+                <div className="text-xs font-mono">
+                  <span className="text-slate-400">Pearson r = </span>
+                  <span className={corrValue > 0 ? "text-cyan-400 font-bold" : "text-rose-400 font-bold"}>
+                    {corrValue > 0 ? `+${corrValue.toFixed(4)}` : corrValue.toFixed(4)}
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-300 leading-relaxed">
+                {matchingTopCorr?.plain_english ||
+                  (Math.abs(corrValue) >= 0.7
+                    ? `Strong ${corrValue > 0 ? "positive" : "negative"} linear association observed between ${compareVarA} and ${compareVarB}. As ${compareVarA} increases, ${compareVarB} tends to ${corrValue > 0 ? "increase" : "decrease"}.`
+                    : Math.abs(corrValue) >= 0.3
+                    ? `Moderate ${corrValue > 0 ? "positive" : "negative"} linear association observed between ${compareVarA} and ${compareVarB}.`
+                    : `Weak or negligible linear association observed (r = ${corrValue.toFixed(4)}).`)}
+              </p>
+
+              <div className="text-[10px] text-slate-500 pt-1">
+                Note: Correlation describes linear co-movement in this dataset and does not establish causation.
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-white">
+                  {compareVarA} &times; {compareVarB}
+                </span>
+                <span className="text-[10px] uppercase px-2 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800">
+                  Categorical &times; Numeric Comparison
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Evaluating group segmentation between categorical and numerical features. Inspect the Key Findings section for verified Mann-Whitney or ANOVA hypothesis tests.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Numerical Distribution Explorer */}
       {numDist.length > 0 && currentNum && (
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5">
@@ -68,12 +252,12 @@ export function ExploreTab({ data }: ExploreTabProps) {
               </h5>
 
               <div className="grid grid-cols-2 gap-2 text-slate-400">
-                <div>Mean: <strong className="text-slate-200 font-mono">{currentNum.mean ?? "Unavailable"}</strong></div>
-                <div>Median: <strong className="text-slate-200 font-mono">{currentNum.median ?? "Unavailable"}</strong></div>
-                <div>Std Dev: <strong className="text-slate-200 font-mono">{currentNum.std ?? "Unavailable"}</strong></div>
-                <div>IQR: <strong className="text-slate-200 font-mono">{currentNum.iqr}</strong></div>
-                <div>Min: <strong className="text-slate-200 font-mono">{currentNum.min}</strong></div>
-                <div>Max: <strong className="text-slate-200 font-mono">{currentNum.max}</strong></div>
+                <div>Mean: <strong className="text-slate-200 font-mono">{currentNum.mean?.toLocaleString() ?? "Unavailable"}</strong></div>
+                <div>Median: <strong className="text-slate-200 font-mono">{currentNum.median?.toLocaleString() ?? "Unavailable"}</strong></div>
+                <div>Std Dev: <strong className="text-slate-200 font-mono">{currentNum.std?.toLocaleString() ?? "Unavailable"}</strong></div>
+                <div>IQR: <strong className="text-slate-200 font-mono">{currentNum.iqr.toLocaleString()}</strong></div>
+                <div>Min: <strong className="text-slate-200 font-mono">{currentNum.min.toLocaleString()}</strong></div>
+                <div>Max: <strong className="text-slate-200 font-mono">{currentNum.max.toLocaleString()}</strong></div>
                 <div>Skewness: <strong className="text-slate-200 font-mono">{currentNum.skewness ?? "Unavailable"}</strong></div>
                 <div>Kurtosis: <strong className="text-slate-200 font-mono">{currentNum.kurtosis ?? "Unavailable"}</strong></div>
               </div>

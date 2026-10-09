@@ -11,6 +11,21 @@ class HealthResponse(BaseModel):
     status: str
     project: str
     version: str
+    engine_status: str = "ready"
+    timestamp: float | None = None
+
+
+class DiagnosticResponse(BaseModel):
+    """Operational telemetry and health statistics."""
+
+    status: str
+    project: str
+    version: str
+    uptime_seconds: float
+    memory_mb: float | None = None
+    python_version: str
+    max_concurrent_analyses: int
+    environment: str
 
 
 class SampleDatasetInfo(BaseModel):
@@ -68,7 +83,8 @@ class AnalyzeRequest(BaseModel):
     metric_column: str | None = Field(None, max_length=100)
     date_column: str | None = Field(None, max_length=100)
     group_column: str | None = Field(None, max_length=100)
-    question: Literal["automatic", "time", "groups", "relationships", "distributions"] = "automatic"
+    question: str = "automatic"
+    goal: str | None = Field(None, max_length=64, description="Optional high-level analytical goal")
 
 
 class InsightPoint(BaseModel):
@@ -87,8 +103,8 @@ class InsightChart(BaseModel):
 
 class KeyFinding(BaseModel):
     id: str
-    category: Literal["time", "group", "relationship", "distribution", "model"]
-    finding_type: Literal["observed", "association", "prediction"]
+    category: str
+    finding_type: str
     title: str
     summary: str
     interpretation: str
@@ -121,6 +137,7 @@ class InsightDiscovery(BaseModel):
     dataset_overview: str
     status: str
     selected_focus: InsightFocus
+    goal: str | None = None
     options: InsightOptions
     important_metrics: list[ImportantMetric]
     key_findings: list[KeyFinding]

@@ -4,23 +4,30 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Any, Literal
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
-Question = Literal["automatic", "time", "groups", "relationships", "distributions"]
+Question = str
 
 _METRIC_WORDS = {
     "amount", "average", "cost", "count", "earnings", "grade", "measure",
     "price", "profit", "rate", "revenue", "score", "sales", "spend",
     "temperature", "total", "value", "volume", "weight",
 }
-_QUESTION_CATEGORY = {
+_QUESTION_CATEGORY: dict[str, str | None] = {
     "time": "time",
+    "trends": "time",
     "groups": "group",
+    "compare_groups": "group",
     "relationships": "relationship",
     "distributions": "distribution",
+    "predict_outcome": "model",
+    "predict": "model",
+    "explore_everything": None,
+    "discover_insights": None,
+    "automatic": None,
 }
 
 
@@ -191,6 +198,92 @@ def _time_candidate(
         "chart": _chart(
             "line",
             f"How average {metric} changed over time",
+            date_column,
+            f"Average {metric}",
+            all_points,
+        ),
+    }
+
+
+def _time_extremes_candidate(
+    df: pd.DataFrame,
+    metric: str,
+    date_column: str,
+    question: Question,
+) -> dict[str, Any] | None:
+    timestamps = _resolve_date_values(df, date_column)
+    values = _numeric_series(df, metric)
+    frame = pd.DataFrame({"time": timestamps, "value": values}).dropna()
+    if len(frame) < 8 or frame["time"].nunique() < 4:
+        return None
+    coverage = len(frame) / max(1, len(df))
+    if coverage < 0.5:
+        return None
+
+    span_days = max(0.0, (frame["time"].max() - frame["time"].min()).total_seconds() / 86400)
+    frequency = "D" if span_days <= 90 else ("W-SUN" if span_days <= 540 else "M")
+    frame["period"] = (
+        frame["time"].dt.floor("D")
+        if frequency == "D"
+        else frame["time"].dt.tz_localize(None).dt.to_period(frequency).dt.start_time
+    )
+    periods = frame.groupby("period", sort=True)["value"].mean().dropna()
+    if len(periods) < 4:
+        periods = frame.groupby("time", sort=True)["value"].mean().dropna()
+    if len(periods) < 4:
+        return None
+
+    min_period, max_period = periods.idxmin(), periods.idxmax()
+    min_val, max_val = float(periods.loc[min_period]), float(periods.loc[max_period])
+    spread = max_val - min_val
+    scale = max(abs(min_val), abs(max_val), float(periods.std(ddof=0)), 1e-12)
+    relative_spread = spread / scale
+    if relative_spread < 0.15:
+        return None
+
+    min_date_str = min_period.strftime("%b %d, %Y") if hasattr(min_period, "strftime") else str(min_period)[:10]
+    max_date_str = max_period.strftime("%b %d, %Y") if hasattr(max_period, "strftime") else str(max_period)[:10]
+
+    all_points = [
+        {
+            "x": stamp.isoformat() if hasattr(stamp, "isoformat") else str(stamp)[:10],
+            "y": _safe_number(value),
+            "detail": f"Avg: {_format_number(float(value))}",
+        }
+        for stamp, value in periods.items()
+    ]
+    if len(all_points) > 48:
+        take = np.linspace(0, len(all_points) - 1, 48, dtype=int)
+        all_points = [all_points[int(i)] for i in take]
+
+    focus_boost = 1.05 if question in ("automatic", "time", "trends") else 0.9
+    score = focus_boost * min(1.0, math.tanh(relative_spread)) * min(1.0, len(frame) / 30) * coverage * 0.75
+    return {
+        "_score": score,
+        "id": "time-extremes",
+        "category": "time",
+        "finding_type": "observed",
+        "title": f"Recorded {metric} peaked on {max_date_str}",
+        "summary": (
+            f"Average {metric} reached its highest level of {_format_number(max_val)} on {max_date_str} "
+            f"and its lowest of {_format_number(min_val)} on {min_date_str}."
+        ),
+        "interpretation": f"This identifies the peak and trough periods for {metric} within the observed date window.",
+        "limitation": "Extremes are descriptive of this recording period. Reporting schedules or missing intervals may affect peak timing.",
+        "confidence": _confidence(len(frame), coverage),
+        "evidence": {
+            "time_column": date_column,
+            "metric_column": metric,
+            "peak_period": max_date_str,
+            "peak_value": round(max_val, 6),
+            "trough_period": min_date_str,
+            "trough_value": round(min_val, 6),
+            "spread": round(spread, 6),
+            "coverage_percentage": round(coverage * 100, 2),
+        },
+        "chart": _chart(
+            "line",
+            f"Recorded peaks and troughs in average {metric}",
             date_column,
             f"Average {metric}",
             all_points,
@@ -410,6 +503,58 @@ def _category_candidate(df: pd.DataFrame, group: str, question: Question) -> dic
     }
 
 
+def _category_pareto_candidate(df: pd.DataFrame, group: str, question: Question) -> dict[str, Any] | None:
+    counts = df[group].dropna().astype(str).value_counts()
+    total = int(counts.sum())
+    if len(counts) < 3 or total < 15:
+        return None
+    top2_share = float(counts.iloc[:2].sum() / total)
+    top3_share = float(counts.iloc[:3].sum() / total)
+    if top2_share >= 0.60:
+        top_k = 2
+        top_share = top2_share
+    elif len(counts) >= 4 and top3_share >= 0.70:
+        top_k = 3
+        top_share = top3_share
+    else:
+        return None
+
+    top_names = [_label(c) for c in counts.index[:top_k]]
+    top_counts = int(counts.iloc[:top_k].sum())
+    coverage = total / max(1, len(df))
+
+    points = [
+        {"x": _label(name), "y": int(count), "detail": f"{int(count):,} records ({count / total * 100:.1f}%)"}
+        for name, count in counts.head(5).items()
+    ]
+    other_count = int(total - counts.head(5).sum())
+    if other_count > 0:
+        points.append({"x": "All Other", "y": other_count, "detail": f"{other_count:,} records across remaining categories"})
+
+    focus_boost = 1.05 if question in ("automatic", "groups", "compare_groups") else 0.9
+    return {
+        "_score": focus_boost * min(1.0, top_share) * min(1.0, total / 30) * coverage * 0.55,
+        "id": "category-concentration",
+        "category": "group",
+        "finding_type": "observed",
+        "title": f"Top {top_k} groups account for {top_share * 100:.1f}% of {group}",
+        "summary": f"{', '.join(top_names)} represent {top_counts:,} of {total:,} records ({top_share * 100:.1f}%).",
+        "interpretation": f"Observations in {group} are predominantly concentrated in the top {top_k} categories.",
+        "limitation": "Category concentration reflects distribution in this dataset; it does not indicate causality or desirability.",
+        "confidence": _confidence(total, coverage),
+        "evidence": {
+            "group_column": group,
+            "top_k_count": top_k,
+            "top_categories": top_names,
+            "combined_count": top_counts,
+            "total_records": total,
+            "concentration_percentage": round(top_share * 100, 2),
+            "coverage_percentage": round(coverage * 100, 2),
+        },
+        "chart": _chart("bar", f"Distribution and concentration of {group}", group, "Records", points),
+    }
+
+
 def _distribution_candidate(df: pd.DataFrame, metric: str, question: Question) -> dict[str, Any] | None:
     values = _numeric_series(df, metric).dropna()
     if len(values) < 12 or values.nunique() < 4:
@@ -459,6 +604,56 @@ def _distribution_candidate(df: pd.DataFrame, metric: str, question: Question) -
             "first_quartile": round(q1, 6),
             "third_quartile": round(q3, 6),
             "skewness": round(skew, 4),
+            "coverage_percentage": round(coverage * 100, 2),
+        },
+        "chart": chart,
+    }
+
+
+def _unusual_observations_candidate(df: pd.DataFrame, metric: str, question: Question) -> dict[str, Any] | None:
+    values = _numeric_series(df, metric).dropna()
+    if len(values) < 20 or values.nunique() < 5:
+        return None
+    q25, q75 = float(values.quantile(0.25)), float(values.quantile(0.75))
+    iqr = q75 - q25
+    if iqr <= 0:
+        return None
+    lower_bound = q25 - 1.5 * iqr
+    upper_bound = q75 + 1.5 * iqr
+    outliers = values[(values < lower_bound) | (values > upper_bound)]
+    outlier_count = int(len(outliers))
+    outlier_pct = outlier_count / len(values) * 100
+    if outlier_count < 2 or outlier_pct < 0.5 or outlier_pct > 20.0:
+        return None
+
+    coverage = len(values) / max(1, len(df))
+    chart = _histogram_chart(values, metric)
+    if chart is None:
+        return None
+
+    focus_boost = 1.1 if question in ("automatic", "distributions") else 1.0
+    return {
+        "_score": focus_boost * min(1.0, math.tanh(outlier_count / 10)) * min(1.0, len(values) / 30) * coverage,
+        "id": "unusual-observations",
+        "category": "distribution",
+        "finding_type": "observed",
+        "title": f"{outlier_count:,} unusual observations stand apart in {metric}",
+        "summary": (
+            f"{outlier_count:,} of {len(values):,} observations ({outlier_pct:.1f}%) fall outside the standard "
+            f"1.5×IQR boundary ({_format_number(lower_bound)} to {_format_number(upper_bound)})."
+        ),
+        "interpretation": f"These records have unusually high or low {metric} values relative to the rest of the dataset.",
+        "limitation": "Mathematical outliers are not automatically errors; they often reflect valid extreme real-world events.",
+        "confidence": _confidence(len(values), coverage),
+        "evidence": {
+            "metric_column": metric,
+            "outlier_count": outlier_count,
+            "total_observations": int(len(values)),
+            "outlier_percentage": round(outlier_pct, 2),
+            "lower_boundary": round(lower_bound, 4),
+            "upper_boundary": round(upper_bound, 4),
+            "min_outlier": round(float(outliers.min()), 4),
+            "max_outlier": round(float(outliers.max()), 4),
             "coverage_percentage": round(coverage * 100, 2),
         },
         "chart": chart,
@@ -559,6 +754,119 @@ def _model_candidate(modeling: dict[str, Any] | None, question: Question) -> dic
     }
 
 
+def _model_features_candidate(modeling: dict[str, Any] | None, question: Question) -> dict[str, Any] | None:
+    if not modeling or not modeling.get("models"):
+        return None
+    best_model = next((m for m in modeling.get("models", []) if m.get("is_best_model")), None)
+    if not best_model or not best_model.get("feature_importances"):
+        return None
+    importances = best_model.get("feature_importances", [])
+    if not importances:
+        return None
+    top_feat = importances[0]
+    top_name = str(top_feat.get("feature", "Feature"))
+    top_val = float(top_feat.get("importance", 0.0))
+    if top_val < 0.20:
+        return None
+
+    top5 = importances[:5]
+    points = [
+        {"x": _label(f.get("feature", "")), "y": round(float(f.get("importance", 0.0)), 4)}
+        for f in top5
+    ]
+    model_name = best_model.get("display_name") or best_model.get("model_name") or "Selected Model"
+    target_name = modeling.get("target_column") or "target"
+    focus_boost = 1.3 if question in ("automatic", "predict_outcome", "predict") else 1.0
+
+    return {
+        "_score": focus_boost * min(1.0, top_val * 2) * 0.9,
+        "id": "model-top-features",
+        "category": "model",
+        "finding_type": "prediction",
+        "title": f"`{top_name}` provided the strongest predictive signal for {target_name}",
+        "summary": (
+            f"In the best-performing {model_name}, `{top_name}` accounted for {top_val * 100:.1f}% of "
+            f"relative feature importance, leading all tested predictors."
+        ),
+        "interpretation": f"When predicting {target_name}, the model weighted `{top_name}` more heavily than other candidate features.",
+        "limitation": "Feature importance reflects statistical model reliance, not real-world causation. Inter-correlated features can dilute or inflate importances.",
+        "confidence": "moderate" if int(modeling.get("test_samples", 0)) >= 30 else "exploratory",
+        "evidence": {
+            "target_column": target_name,
+            "top_feature": top_name,
+            "top_feature_importance": round(top_val, 4),
+            "model_evaluated": model_name,
+            "top_5_features": [f.get("feature") for f in top5],
+        },
+        "chart": _chart(
+            "bar",
+            f"Predictive importance of top features for {target_name}",
+            "Feature",
+            "Relative Importance",
+            points,
+        ),
+    }
+
+
+def _model_weak_warning_candidate(modeling: dict[str, Any] | None, question: Question) -> dict[str, Any] | None:
+    if not modeling or int(modeling.get("test_samples", 0)) < 20:
+        return None
+    rows = modeling.get("summary_table") or []
+    if not rows:
+        return None
+    metric_key = "f1_macro" if "f1_macro" in rows[0] else "r2"
+    best = next((row for row in rows if row.get("is_best")), None)
+    baseline = next((row for row in rows if "baseline" in str(row.get("model", "")).casefold()), None)
+    if not best or not baseline:
+        return None
+    try:
+        best_score = float(best[metric_key])
+        baseline_score = float(baseline[metric_key])
+    except (KeyError, TypeError, ValueError):
+        return None
+    is_weak = (metric_key == "r2" and best_score <= 0.05) or (
+        metric_key == "f1_macro" and (best_score - baseline_score) <= 0.03
+    )
+    if not is_weak:
+        return None
+
+    metric_label = "macro F1" if metric_key == "f1_macro" else "R²"
+    target_name = modeling.get("target_column") or "target"
+    points = [
+        {"x": _label(row.get("model", "Model")), "y": round(float(row[metric_key]), 4)}
+        for row in (baseline, best)
+    ]
+    focus_boost = 1.2 if question in ("predict_outcome", "predict") else 0.8
+    return {
+        "_score": focus_boost * 0.75,
+        "id": "model-weak-signal",
+        "category": "model",
+        "finding_type": "observed",
+        "title": f"Available features showed limited predictive power for {target_name}",
+        "summary": (
+            f"The best model ({best.get('model')}) achieved a holdout score of {best_score:.3f} {metric_label}, "
+            f"which is near the simple baseline of {baseline_score:.3f}."
+        ),
+        "interpretation": f"The predictors in this dataset did not explain meaningful variation in {target_name} under standard model architectures.",
+        "limitation": "This does not prove the target is unpredictable; non-linear signals, unmeasured confounders, or missing features may exist.",
+        "confidence": "moderate",
+        "evidence": {
+            "target_column": target_name,
+            "metric": metric_label,
+            "best_model": best.get("model"),
+            "best_score": round(best_score, 4),
+            "baseline_score": round(baseline_score, 4),
+        },
+        "chart": _chart(
+            "bar",
+            f"Model vs baseline comparison ({metric_label})",
+            "Model",
+            metric_label,
+            points,
+        ),
+    }
+
+
 def discover_insights(
     df: pd.DataFrame,
     dataset_name: str,
@@ -573,6 +881,7 @@ def discover_insights(
     date_column: str | None = None,
     group_column: str | None = None,
     question: Question = "automatic",
+    goal: str | None = None,
     modeling: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Find a small set of useful patterns without requiring an LLM or domain rules."""
@@ -622,17 +931,22 @@ def discover_insights(
     if selected_group is not None and selected_group not in categories:
         raise ValueError(f"'{selected_group}' is not an eligible grouping column in this dataset.")
 
+    effective_question = goal if goal and question == "automatic" else question
+    goal_note = ""
+    if effective_question in ("time", "trends") and not date_options:
+        goal_note = "No date/time column detected in this dataset. Analyzing group differences and numerical distributions instead."
+
     field_names = [str(column) for column in df.columns[:5]]
     field_phrase = ", ".join(f"`{name}`" for name in field_names) or "no named fields"
     overview = (
         f"{dataset_name} contains {len(df):,} records with fields including {field_phrase}. "
         "The findings below use the available measurements and their observed values."
     )
-    selected_focus = {
+    selected_focus: dict[str, Any] = {
         "metric_column": selected_metric,
         "date_column": selected_date,
         "group_column": selected_group,
-        "question": question,
+        "question": effective_question,
     }
 
     metrics: list[dict[str, str]] = []
@@ -648,7 +962,7 @@ def discover_insights(
                 },
                 {
                     "label": f"Observed range for {selected_metric}",
-                    "value": f"{_format_number(float(metric_values.min()))} – {_format_number(float(metric_values.max()))}",
+                    "value": f"{_format_number(float(metric_values.min()))} to {_format_number(float(metric_values.max()))}",
                     "detail": "Lowest and highest recorded values; extreme values may be valid.",
                 },
             ])
@@ -665,47 +979,78 @@ def discover_insights(
         if not timestamps.empty:
             metrics.append({
                 "label": "Observed date span",
-                "value": f"{timestamps.min().date().isoformat()} – {timestamps.max().date().isoformat()}",
+                "value": f"{timestamps.min().date().isoformat()} to {timestamps.max().date().isoformat()}",
                 "detail": f"{timestamps.nunique():,} distinct timestamps; gaps are not filled.",
             })
     metrics = metrics[:3]
 
     candidates: list[dict[str, Any]] = []
     if selected_metric and selected_date:
-        found = _time_candidate(df, selected_metric, selected_date, question)
+        found = _time_candidate(df, selected_metric, selected_date, effective_question)
         if found:
             candidates.append(found)
-        found = _seasonality_candidate(df, selected_metric, selected_date, question)
+        found = _time_extremes_candidate(df, selected_metric, selected_date, effective_question)
+        if found:
+            candidates.append(found)
+        found = _seasonality_candidate(df, selected_metric, selected_date, effective_question)
         if found:
             candidates.append(found)
     if selected_metric and selected_group:
-        found = _group_candidate(df, selected_metric, selected_group, question)
+        found = _group_candidate(df, selected_metric, selected_group, effective_question)
         if found:
             candidates.append(found)
     if selected_group:
-        found = _category_candidate(df, selected_group, question)
+        found = _category_candidate(df, selected_group, effective_question)
+        if found:
+            candidates.append(found)
+        found = _category_pareto_candidate(df, selected_group, effective_question)
         if found:
             candidates.append(found)
     if selected_metric:
-        found = _distribution_candidate(df, selected_metric, question)
+        found = _distribution_candidate(df, selected_metric, effective_question)
+        if found:
+            candidates.append(found)
+        found = _unusual_observations_candidate(df, selected_metric, effective_question)
         if found:
             candidates.append(found)
         related = [column for column in numeric if column != selected_metric][:6]
         for other in related:
-            found = _relationship_candidate(df, selected_metric, other, question)
+            found = _relationship_candidate(df, selected_metric, other, effective_question)
             if found:
                 candidates.append(found)
-    found = _model_candidate(modeling, question)
+    found = _model_candidate(modeling, effective_question)
+    if found:
+        candidates.append(found)
+    found = _model_features_candidate(modeling, effective_question)
+    if found:
+        candidates.append(found)
+    found = _model_weak_warning_candidate(modeling, effective_question)
     if found:
         candidates.append(found)
 
-    preferred_category = _QUESTION_CATEGORY.get(question)
+    preferred_category = _QUESTION_CATEGORY.get(effective_question)
     candidates.sort(
-        key=lambda item: (item["_score"] * (1.2 if item["category"] == preferred_category else 1.0), item["_score"]),
+        key=lambda item: (
+            item["_score"] * (2.2 if preferred_category and item["category"] == preferred_category else 1.0),
+            item["_score"],
+        ),
         reverse=True,
     )
     findings: list[dict[str, Any]] = []
     used_ids: set[str] = set()
+
+    # For explore_everything, ensure diverse representation across categories
+    if effective_question in ("explore_everything", "all"):
+        cat_seen: set[str] = set()
+        for item in candidates:
+            if item["_score"] < 0.12 or item["id"] in used_ids or item["category"] in cat_seen:
+                continue
+            used_ids.add(item["id"])
+            cat_seen.add(item["category"])
+            findings.append({key: value for key, value in item.items() if not key.startswith("_")})
+            if len(findings) == 4:
+                break
+
     for item in candidates:
         if item["_score"] < 0.12 or item["id"] in used_ids:
             continue
@@ -716,27 +1061,30 @@ def discover_insights(
 
     suggestions: list[str] = []
     if selected_metric and selected_group:
-        suggestions.append(f"How does `{selected_metric}` vary across the groups in `{selected_group}`?")
+        suggestions.append(f"How does `{selected_metric}` vary across `{selected_group}`?")
     if selected_metric and selected_date:
-        suggestions.append(f"Does the pattern in `{selected_metric}` differ across time periods?")
+        suggestions.append(f"How did `{selected_metric}` evolve over the observed dates?")
     if selected_metric:
         other_numeric = [column for column in numeric if column != selected_metric]
         if other_numeric:
-            suggestions.append(f"Which other recorded fields move with `{selected_metric}`?")
+            suggestions.append(f"Which features are most strongly correlated with `{selected_metric}`?")
     if not suggestions:
         suggestions.append("Which columns or groups should be examined more closely?")
 
     if findings:
-        status = f"Found {len(findings)} evidence-backed pattern{'' if len(findings) == 1 else 's'} to explore."
+        base_status = f"Found {len(findings)} evidence-backed pattern{'' if len(findings) == 1 else 's'} to explore."
     elif len(df) < 8:
-        status = "There are too few usable records to support a dependable pattern yet."
+        base_status = "There are too few usable records to support a dependable pattern yet."
     else:
-        status = "No strong, well-supported pattern stood out in the available fields."
+        base_status = "No strong, well-supported pattern stood out in the available fields."
+
+    status = f"{goal_note} {base_status}".strip() if goal_note else base_status
 
     return {
         "dataset_overview": overview,
         "status": status,
         "selected_focus": selected_focus,
+        "goal": goal,
         "options": {
             "metric_columns": metric_options,
             "date_columns": date_options,

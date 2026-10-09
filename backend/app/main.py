@@ -40,9 +40,23 @@ def create_app() -> FastAPI:
         allow_origins=settings.CORS_ORIGINS,
         allow_credentials=False,
         allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["Content-Type", "X-Infera-Session"],
-        expose_headers=["Content-Disposition", "Retry-After"],
+        allow_headers=["Content-Type", "X-Infera-Session", "X-Request-ID"],
+        expose_headers=["Content-Disposition", "Retry-After", "X-Request-ID", "X-Response-Time-Ms"],
     )
+
+    # Observability and request duration tracking
+    @app.middleware("http")
+    async def observability_headers(request: Request, call_next):
+        import time
+        import uuid
+
+        request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+        start = time.perf_counter()
+        response = await call_next(request)
+        duration_ms = (time.perf_counter() - start) * 1000.0
+        response.headers["X-Request-ID"] = request_id
+        response.headers["X-Response-Time-Ms"] = f"{duration_ms:.2f}"
+        return response
 
     # Private results must not be shared through browser or intermediary caches.
     @app.middleware("http")

@@ -58,6 +58,7 @@ async def run_analysis(request: AnalyzeRequest, owner: Annotated[str, Depends(re
                 date_column=request.date_column,
                 group_column=request.group_column,
                 question=request.question,
+                goal=request.goal,
             )
         )
         try:

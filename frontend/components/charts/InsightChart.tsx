@@ -1,6 +1,8 @@
 "use client";
 
+import { useRef, useState } from "react";
 import { InsightChartData } from "@/lib/types";
+import { Check, Download } from "lucide-react";
 
 const WIDTH = 680;
 const HEIGHT = 286;
@@ -20,6 +22,9 @@ function dateLabel(value: string | number) {
 
 export function InsightChart({ chart, id }: { chart: InsightChartData; id?: string }) {
   const points = chart.points;
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const [downloaded, setDownloaded] = useState(false);
+
   if (!points.length) return null;
 
   const plotWidth = WIDTH - PLOT.left - PLOT.right;
@@ -66,13 +71,63 @@ export function InsightChart({ chart, id }: { chart: InsightChartData; id?: stri
     .map((point, index) => `${index === 0 ? "M" : "L"}${x(index).toFixed(2)},${y(point.y).toFixed(2)}`)
     .join(" ");
 
+  const handleExportPng = () => {
+    if (!svgRef.current) return;
+    try {
+      const svg = svgRef.current;
+      const serializer = new XMLSerializer();
+      const svgString = serializer.serializeToString(svg);
+      const svgBlob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+      const blobUrl = URL.createObjectURL(svgBlob);
+      const img = new Image();
+
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const scale = 2; // High-resolution 2x rendering
+        canvas.width = WIDTH * scale;
+        canvas.height = HEIGHT * scale;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.fillStyle = "#020617"; // Slate-950 dark background matching Infera theme
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const pngUrl = canvas.toDataURL("image/png");
+          const a = document.createElement("a");
+          const safeName = chart.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+          a.download = `infera-${safeName || "chart"}.png`;
+          a.href = pngUrl;
+          a.click();
+          setDownloaded(true);
+          setTimeout(() => setDownloaded(false), 2000);
+        }
+        URL.revokeObjectURL(blobUrl);
+      };
+      img.src = blobUrl;
+    } catch (err) {
+      console.error("Failed to export chart PNG:", err);
+    }
+  };
+
   return (
     <figure id={id} className="mt-4 rounded-xl border border-slate-800 bg-slate-950/60 p-3 sm:p-4" aria-labelledby={`caption-${id ?? chart.title}`}>
-      <figcaption id={`caption-${id ?? chart.title}`} className="mb-2 text-sm font-medium text-slate-200">
-        {chart.title}
-      </figcaption>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <figcaption id={`caption-${id ?? chart.title}`} className="text-sm font-medium text-slate-200">
+          {chart.title}
+        </figcaption>
+        <button
+          type="button"
+          onClick={handleExportPng}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] rounded bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition-colors"
+          title="Export chart as high-resolution PNG"
+        >
+          {downloaded ? <Check size={12} className="text-emerald-400" /> : <Download size={12} />}
+          <span>{downloaded ? "Saved" : "Export PNG"}</span>
+        </button>
+      </div>
+
       <div className="w-full overflow-x-auto">
         <svg
+          ref={svgRef}
           className="min-w-[520px] w-full"
           viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
           role="img"

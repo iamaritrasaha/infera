@@ -4,7 +4,6 @@ import json
 import threading
 import time
 
-from app.analysis.pipeline.runner import run_full_analysis
 from app.core.config import settings
 from app.core.logging import logger
 from app.services.dataset_service import session_store
@@ -54,6 +53,12 @@ result_cache = AnalysisResultCache(
 )
 
 
+def run_full_analysis(*args, **kwargs):
+    """Lazy wrapper allowing late import of the statistical and ML pipeline."""
+    from app.analysis.pipeline.runner import run_full_analysis as _runner
+    return _runner(*args, **kwargs)
+
+
 def execute_analysis(
     dataset_id: str,
     target_column: str | None = None,
@@ -63,6 +68,7 @@ def execute_analysis(
     date_column: str | None = None,
     group_column: str | None = None,
     question: str = "automatic",
+    goal: str | None = None,
 ) -> dict:
     """Retrieves dataset from session, executes master analysis, and caches result."""
     entry = session_store.get(dataset_id, owner)
@@ -72,12 +78,14 @@ def execute_analysis(
         )
 
     df, name = entry
+    effective_question = goal if goal and question == "automatic" else question
     existing = result_cache.get(dataset_id)
     requested_focus = {
         "metric_column": metric_column,
         "date_column": date_column,
         "group_column": group_column,
-        "question": question,
+        "question": effective_question,
+        "goal": goal,
     }
     if (
         existing
@@ -85,7 +93,7 @@ def execute_analysis(
         and existing.get("requested_focus") == requested_focus
     ):
         return existing
-    logger.info("Starting analysis with %d rows", len(df))
+    logger.info("Starting analysis with %d rows (goal: %s)", len(df), goal or "default")
 
     payload = run_full_analysis(
         df,
@@ -94,7 +102,8 @@ def execute_analysis(
         metric_column=metric_column,
         date_column=date_column,
         group_column=group_column,
-        question=question,
+        question=effective_question,
+        goal=goal,
     )
     payload["dataset_id"] = dataset_id
     payload["requested_target"] = target_column
