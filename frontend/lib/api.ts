@@ -88,24 +88,71 @@ export class ApiError extends Error {
     message: string,
     public readonly kind:
       | "transient"
+      | "cold-start"
       | "configuration"
       | "incompatible"
       | "deployment"
       | "offline"
-      | "http",
+      | "http"
+      | "network"
+      | "timeout"
+      | "aborted",
     public readonly status?: number,
+    public readonly requestId?: string,
   ) {
     super(message);
     this.name = "ApiError";
   }
 }
 
-const TEMPORARY_UNAVAILABLE =
-  "The analysis engine could not be reached. The free Render service may be waking up; check your connection and the backend CORS/API URL if this continues.";
+const UNKNOWN_NETWORK_FAILURE =
+  "The browser could not complete the request, and it did not expose the cause. This is an unknown browser/network failure, not proof that the backend is starting. Check your network or VPN, open the backend health link, then retry.";
+
+export function connectionTimestamp(): number {
+  return typeof performance !== "undefined"
+    ? performance.timeOrigin + performance.now()
+    : Date.now();
+}
+
 export function errorMessage(error: unknown): string {
   return error instanceof Error
     ? error.message
     : "The request could not be completed. Please try again.";
+}
+
+export function apiHealthUrl(): string | null {
+  try {
+    return `${apiBase()}/health`;
+  } catch {
+    return null;
+  }
+}
+
+function endpointLabel(responseUrl: string): string {
+  try {
+    const pathname = new URL(responseUrl).pathname;
+    if (pathname.startsWith("/api/results/")) return "/api/results";
+    if (pathname.startsWith("/api/samples/")) return "/api/samples/:id/load";
+    return pathname;
+  } catch {
+    return "API response";
+  }
+}
+
+function announceApiSuccess(response: Response) {
+  if (typeof window === "undefined" || !response.url) return;
+  const requestStartedAt = (response as Response & { inferaRequestStartedAt?: number })
+    .inferaRequestStartedAt;
+  window.dispatchEvent(
+    new CustomEvent("infera:api-success", {
+      detail: {
+        endpoint: endpointLabel(response.url),
+        status: response.status,
+        requestId: response.headers.get("x-request-id") ?? undefined,
+        requestStartedAt: requestStartedAt ?? Date.now(),
+      },
+    }),
+  );
 }
 
 async function request(
@@ -115,6 +162,9 @@ async function request(
   timeoutMs = 125000,
   signal?: AbortSignal,
 ): Promise<Response> {
+  if (signal?.aborted) {
+    throw new ApiError("The request was cancelled before it started.", "aborted");
+  }
   if (typeof navigator !== "undefined" && navigator.onLine === false) {
     throw new ApiError(
       "Your browser appears to be offline. Check your network connection.",
@@ -125,24 +175,37 @@ async function request(
   const headers = new Headers(init.headers);
   if (owned) headers.set("X-Infera-Session", sessionToken());
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let timedOut = false;
+  const abortFromCaller = () => controller.abort(signal?.reason);
+  signal?.addEventListener("abort", abortFromCaller, { once: true });
+  if (signal?.aborted) abortFromCaller();
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  const requestStartedAt = connectionTimestamp();
   try {
     const response = await fetch(`${base}${path}`, {
       ...init,
       headers,
-      signal: signal
-        ? AbortSignal.any([controller.signal, signal])
-        : controller.signal,
+      signal: controller.signal,
       cache: "no-store",
       credentials: "omit",
     });
     if (!response.ok) {
       let detail: unknown;
+      let bodyText = "";
       try {
-        detail = (await response.json()).detail;
+        bodyText = (await response.text()).slice(0, 1200);
+        try {
+          detail = JSON.parse(bodyText).detail;
+        } catch {
+          /* Non-JSON proxy errors are expected; keep them out of user copy. */
+        }
       } catch {
-        /* Non-JSON proxy errors are expected during cold starts. */
+        /* The status is still useful if a proxy body cannot be read. */
       }
+      const requestId = response.headers.get("x-request-id") ?? undefined;
       const messages: Record<number, string> = {
         400: "The request could not be processed. Check the file format or selected target.",
         401: "Your analysis session is missing. Reload and try again.",
@@ -153,16 +216,29 @@ async function request(
         429: "The engine is processing another analysis. Wait a few moments, then retry.",
       };
       if (response.status >= 500) {
-        const transient = [502, 503, 504].includes(response.status);
-        const healthFailure = path === "/health" && !transient;
+        const retryable = [502, 503, 504].includes(response.status);
+        const startupText = typeof detail === "string" ? detail : bodyText;
+        const reportsColdStart =
+          response.status === 503 &&
+          ( /\b(?:service|instance|application|upstream)\b.{0,50}\b(?:starting|waking|spinning up)\b/i.test(
+              startupText,
+            ) ||
+            /\b(?:starting|waking|spinning up)\b.{0,50}\b(?:service|instance|application|upstream)\b/i.test(
+            startupText,
+            ) );
         throw new ApiError(
-          healthFailure
-            ? `The backend health endpoint returned HTTP ${response.status}; check the Render startup and health-check logs.`
-            : transient
-              ? `The analysis service is temporarily unavailable (HTTP ${response.status}). Render may be starting the free instance.`
-              : `The analysis service returned HTTP ${response.status}. Retry, and check backend logs if the error continues.`,
-          healthFailure ? "deployment" : transient ? "transient" : "http",
+          reportsColdStart
+              ? `The backend explicitly reports that it is starting (HTTP ${response.status}). Infera will retry within its bounded connection window.`
+              : retryable
+                ? `The backend returned HTTP ${response.status}. Its response does not identify whether this is a cold start or another upstream problem.`
+                : `The analysis service returned HTTP ${response.status}. Retry, and check backend logs if the error continues.`,
+          reportsColdStart
+              ? "cold-start"
+              : retryable
+                ? "transient"
+                : "http",
           response.status,
+          requestId,
         );
       }
       if (path === "/health" && response.status === 404)
@@ -170,6 +246,7 @@ async function request(
           "The configured backend does not provide the expected /health endpoint. Check the Render service and health-check path.",
           "deployment",
           response.status,
+          response.headers.get("x-request-id") ?? undefined,
         );
       const safeDetail =
         typeof detail === "string" &&
@@ -181,46 +258,80 @@ async function request(
         safeDetail ||
           messages[response.status] ||
           `The request failed (HTTP ${response.status}). Please retry.`,
-        response.status === 429 ? "transient" : "http",
+        "http",
         response.status,
+        response.headers.get("x-request-id") ?? undefined,
       );
     }
     // Keep the timeout active while reading slow or stalled response bodies.
     const body = await response.blob();
-    return new Response(body, {
+    const copiedResponse = new Response(body, {
       status: response.status,
       headers: response.headers,
     });
+    Object.defineProperty(copiedResponse, "url", { value: response.url });
+    Object.defineProperty(copiedResponse, "inferaRequestStartedAt", {
+      value: requestStartedAt,
+    });
+    return copiedResponse;
   } catch (error) {
-    if (signal?.aborted) throw signal.reason;
-    if (controller.signal.aborted)
+    if (signal?.aborted)
+      throw new ApiError("The request was cancelled before it completed.", "aborted");
+    if (timedOut)
       throw new ApiError(
         path === "/api/analyze"
           ? "Analysis took longer than expected. The server may still be computing. Retry to retrieve the cached result."
-          : TEMPORARY_UNAVAILABLE,
-        "transient",
+          : `The health/API request timed out after ${Math.ceil(timeoutMs / 1000)} seconds. The browser cannot tell whether the service is waking or the request path is blocked. Check your network and the backend health link, then retry.`,
+        "timeout",
       );
-    if (error instanceof TypeError)
-      throw new ApiError(TEMPORARY_UNAVAILABLE, "transient");
-    throw error;
+    if (error instanceof ApiError) throw error;
+    if (controller.signal.aborted)
+      throw new ApiError("The request was aborted before a response arrived.", "aborted");
+    throw new ApiError(UNKNOWN_NETWORK_FAILURE, "network");
   } finally {
     clearTimeout(timeout);
+    signal?.removeEventListener("abort", abortFromCaller);
   }
 }
 
 async function json<T>(response: Response, schema: z.ZodType<T>): Promise<T> {
+  let payload: unknown;
   try {
-    return schema.parse(await response.json());
+    payload = await response.json();
   } catch {
     throw new ApiError(
       "The backend responded, but its health or analysis response does not match this frontend version (incompatible). Deploy compatible frontend and backend revisions.",
       "incompatible",
+      response.status,
+      response.headers.get("x-request-id") ?? undefined,
     );
   }
+
+  let parsed: T;
+  try {
+    parsed = schema.parse(payload);
+  } catch {
+    throw new ApiError(
+      "The backend responded, but its health or analysis response does not match this frontend version (incompatible). Deploy compatible frontend and backend revisions.",
+      "incompatible",
+      response.status,
+      response.headers.get("x-request-id") ?? undefined,
+    );
+  }
+
+  let pathname = "";
+  try {
+    pathname = new URL(response.url).pathname;
+  } catch {
+    /* Mock responses and opaque URLs do not identify an endpoint. */
+  }
+  if (pathname !== "/health") announceApiSuccess(response);
+  return parsed;
 }
 export async function fetchHealth(signal?: AbortSignal, timeoutMs = 45000) {
-  return json(
-    await request("/health", {}, false, timeoutMs, signal),
+  const response = await request("/health", {}, false, timeoutMs, signal);
+  const health = await json(
+    response,
     z.object({
       status: z.union([z.literal("ok"), z.literal("degraded")]),
       project: z.literal("Infera"),
@@ -229,11 +340,16 @@ export async function fetchHealth(signal?: AbortSignal, timeoutMs = 45000) {
       timestamp: z.number().optional(),
     }),
   );
+  return {
+    ...health,
+    requestId: response.headers.get("x-request-id") ?? undefined,
+  };
 }
 
 export async function fetchDiagnostics() {
-  return json(
-    await request("/api/diagnostic", {}, false, 15000),
+  const response = await request("/api/diagnostic", {}, false, 15000);
+  const diagnostics = await json(
+    response,
     z.object({
       status: z.literal("ok"),
       project: z.literal("Infera"),
@@ -245,6 +361,10 @@ export async function fetchDiagnostics() {
       environment: z.string(),
     }),
   );
+  return {
+    ...diagnostics,
+    requestId: response.headers.get("x-request-id") ?? undefined,
+  };
 }
 export async function fetchSamples(): Promise<SampleDatasetInfo[]> {
   return json(await request("/api/samples"), samplesSchema);
@@ -365,6 +485,7 @@ export async function downloadReport(
   const expected = format === "html" ? "text/html" : "text/markdown";
   if (!response.headers.get("content-type")?.includes(expected))
     throw new Error("The engine returned an invalid report. Please retry.");
+  announceApiSuccess(response);
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");

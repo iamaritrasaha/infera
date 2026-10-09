@@ -10,7 +10,14 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   reporter: [["list"], ["html", { open: "never" }], ["json", { outputFile: remoteBase ? "test-results/production-results.json" : "test-results/local-results.json" }]],
   use: { baseURL: remoteBase || "http://127.0.0.1:3100", trace: "retain-on-failure", screenshot: "only-on-failure" },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    {
+      name: "firefox",
+      use: { ...devices["Desktop Firefox"] },
+      testMatch: ["**/connection.spec.ts", "**/production-live.spec.ts"],
+    },
+  ],
   webServer: remoteBase ? undefined : [
     {
       command: "../backend/.venv/bin/python -m uvicorn app.main:app --app-dir ../backend --host 127.0.0.1 --port 8001",

@@ -9,6 +9,74 @@ test("live: production verification of Infera v0.5.0", async ({ page }) => {
   test.skip(!PRODUCTION_BASE, "Set INFERA_E2E_BASE_URL to run the explicit production release check.");
   test.setTimeout(360_000);
   await fs.mkdir(ARTIFACTS_DIR, { recursive: true });
+  const browserName = page.context().browser()?.browserType().name() ?? "unknown";
+  const browserSuffix = `-${browserName}`;
+  const expectedApiOrigin = process.env.INFERA_E2E_API_URL ?? "https://infera-backend-tjg3.onrender.com";
+  const networkEvidence: Array<Record<string, string | number | null>> = [];
+  const captureTasks: Promise<void>[] = [];
+  const safeApiUrl = (raw: string) => {
+    const url = new URL(raw);
+    const path = url.pathname
+      .replace(/^\/api\/samples\/[^/]+\/load$/, "/api/samples/:id/load")
+      .replace(/^\/api\/results\/[^/]+\/report$/, "/api/results/:id/report")
+      .replace(/^\/api\/results\/[^/]+$/, "/api/results/:id");
+    return `${url.origin}${path}${url.search}`;
+  };
+  const safeText = (text: string) => text
+    .replace(/\b[a-f0-9]{64}\b/gi, "[redacted-token]")
+    .replace(/(X-Infera-Session\s*[:=]\s*)[^\s,;]+/gi, "$1[redacted]")
+    .slice(0, 500);
+  page.on("request", (request) => {
+    if (new URL(request.url()).origin !== expectedApiOrigin) return;
+    const headers = request.headers();
+    networkEvidence.push({
+      phase: "request",
+      method: request.method(),
+      url: safeApiUrl(request.url()),
+      origin: headers.origin ?? null,
+      preflightMethod: headers["access-control-request-method"] ?? null,
+      preflightHeaders: headers["access-control-request-headers"] ?? null,
+    });
+  });
+  page.on("response", (response) => {
+    if (new URL(response.url()).origin !== expectedApiOrigin) return;
+    captureTasks.push((async () => {
+      const headers = await response.allHeaders();
+      const timing = response.request().timing();
+      networkEvidence.push({
+        phase: "response",
+        method: response.request().method(),
+        url: safeApiUrl(response.url()),
+        status: response.status(),
+        allowOrigin: headers["access-control-allow-origin"] ?? null,
+        allowHeaders: headers["access-control-allow-headers"] ?? null,
+        allowMethods: headers["access-control-allow-methods"] ?? null,
+        requestId: headers["x-request-id"] ?? null,
+        contentType: headers["content-type"] ?? null,
+        requestDurationMs: timing.responseEnd >= 0 ? Math.round(timing.responseEnd) : null,
+      });
+    })());
+  });
+  page.on("requestfailed", (request) => {
+    if (new URL(request.url()).origin !== expectedApiOrigin) return;
+    networkEvidence.push({
+      phase: "failure",
+      method: request.method(),
+      url: safeApiUrl(request.url()),
+      error: safeText(request.failure()?.errorText ?? "unknown"),
+    });
+  });
+  const runtimeErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") runtimeErrors.push(safeText(message.text()));
+  });
+  page.on("pageerror", (error) => runtimeErrors.push(safeText(error.message)));
+  await page.addInitScript(() => {
+    const visibility: Array<{ at: number; state: string }> = [];
+    (window as Window & { __inferaVisibility?: Array<{ at: number; state: string }> }).__inferaVisibility = visibility;
+    visibility.push({ at: Date.now(), state: document.visibilityState });
+    document.addEventListener("visibilitychange", () => visibility.push({ at: Date.now(), state: document.visibilityState }));
+  });
 
   // 1. Visit production dashboard
   await page.goto(new URL("/dashboard", PRODUCTION_BASE!).toString());
@@ -21,7 +89,7 @@ test("live: production verification of Infera v0.5.0", async ({ page }) => {
   await expect(engineIndicator).toContainText("Engine connected");
 
   await page.screenshot({
-    path: path.join(ARTIFACTS_DIR, "1-dashboard-connected.png"),
+    path: path.join(ARTIFACTS_DIR, `1-dashboard-connected${browserSuffix}.png`),
     fullPage: true,
   });
 
@@ -85,7 +153,7 @@ test("live: production verification of Infera v0.5.0", async ({ page }) => {
   await evidenceDetails.first().click();
 
   await page.screenshot({
-    path: path.join(ARTIFACTS_DIR, "2-analysis-overview.png"),
+    path: path.join(ARTIFACTS_DIR, `2-analysis-overview${browserSuffix}.png`),
     fullPage: true,
   });
 
@@ -103,7 +171,7 @@ test("live: production verification of Infera v0.5.0", async ({ page }) => {
   }
 
   await page.screenshot({
-    path: path.join(ARTIFACTS_DIR, "3-explore-bivariate.png"),
+    path: path.join(ARTIFACTS_DIR, `3-explore-bivariate${browserSuffix}.png`),
     fullPage: true,
   });
 
@@ -135,11 +203,39 @@ test("live: production verification of Infera v0.5.0", async ({ page }) => {
   }
 
   await page.screenshot({
-    path: path.join(ARTIFACTS_DIR, "4-report-tab.png"),
+    path: path.join(ARTIFACTS_DIR, `4-report-tab${browserSuffix}.png`),
     fullPage: true,
   });
 
-  // 11. Test manual retry after a transient connection failure & anti-gatekeeper principle
+  // 11. Refresh the fresh browser tab and repeat a real sample analysis and
+  // both report downloads while retaining the browser's isolated session.
+  await page.reload();
+  await expect(engineIndicator).toContainText("Engine connected", { timeout: 150_000 });
+  await page.getByRole("button", { name: /Housing Prices/ }).click();
+  await page.getByLabel("Analysis target").selectOption("price");
+  const repeatedAnalysisPromise = page.waitForResponse((response) =>
+    response.url().includes("/api/analyze") && response.request().method() === "POST",
+    { timeout: 120_000 },
+  );
+  await page.getByRole("button", { name: "Launch Full Analysis" }).click();
+  const repeatedAnalysis = await repeatedAnalysisPromise;
+  expect(repeatedAnalysis.status()).toBe(200);
+  await expect(page.getByRole("heading", { name: "What this data contains" })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("tab", { name: "Report", exact: true }).click();
+  for (const [btnName, ext] of [
+    ["Download .MD", ".md"],
+    ["Download .HTML", ".html"],
+  ]) {
+    const downloadPromise = page.waitForEvent("download", { timeout: 10_000 });
+    await page.getByRole("button", { name: btnName, exact: true }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toContain(ext);
+    const content = await fs.readFile((await download.path())!, "utf8");
+    expect(content).toContain("INFERA DATA SCIENCE EVIDENCE REPORT");
+    expect(content).toContain("Aritra Saha");
+  }
+
+  // 12. Test manual retry after a transient connection failure.
   await page.goto(new URL("/dashboard", PRODUCTION_BASE!).toString());
   await expect(engineIndicator).toContainText("Engine connected", { timeout: 30_000 });
 
@@ -151,9 +247,9 @@ test("live: production verification of Infera v0.5.0", async ({ page }) => {
   // Trigger manual check by clicking indicator
   await engineIndicator.click();
 
-  // Verify "Starting the analysis engine" banner appears
+  // A generic 503 stays a generic upstream retry, not a cold-start claim.
   await expect(
-    page.getByText("Starting the analysis engine", { exact: true }).first(),
+    page.getByText("Retrying the engine connection", { exact: true }).first(),
   ).toBeVisible({ timeout: 15_000 });
 
   // Unroute to restore healthy backend
@@ -168,9 +264,22 @@ test("live: production verification of Infera v0.5.0", async ({ page }) => {
   await expect(page.getByRole("button", { name: /Housing Prices/ })).toBeVisible();
 
   await page.screenshot({
-    path: path.join(ARTIFACTS_DIR, "5-recovery-verified.png"),
+    path: path.join(ARTIFACTS_DIR, `5-recovery-verified${browserSuffix}.png`),
     fullPage: true,
   });
+  await Promise.all(captureTasks);
+  await fs.writeFile(
+    path.join(ARTIFACTS_DIR, `v0.5-engine-connectivity-network${browserSuffix}.json`),
+    `${JSON.stringify({
+      browser: browserName,
+      dashboardOrigin: new URL(PRODUCTION_BASE!).origin,
+      apiOrigin: expectedApiOrigin,
+      visibility: await page.evaluate(() => (window as Window & { __inferaVisibility?: Array<{ at: number; state: string }> }).__inferaVisibility ?? []),
+      consoleErrors: runtimeErrors,
+      requests: networkEvidence,
+      secretsCaptured: false,
+    }, null, 2)}\n`,
+  );
 });
 
 test("live: production CSV exploration, filtered reports, and session isolation", async ({ page }) => {
@@ -312,7 +421,7 @@ test("live: production CSV exploration, filtered reports, and session isolation"
 
   expect(runtimeErrors).toEqual([]);
   await fs.writeFile(
-    path.join(ARTIFACTS_DIR, "v0.5-production-timings.json"),
+    path.join(ARTIFACTS_DIR, `v0.5-production-timings-${page.context().browser()?.browserType().name() ?? "unknown"}.json`),
     `${JSON.stringify({ uploadLatencyMs, analysisLatencyMs, groupLatencyMs, filterLatencyMs, trendLatencyMs }, null, 2)}\n`,
   );
 });

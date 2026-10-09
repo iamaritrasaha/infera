@@ -179,7 +179,7 @@ for (const width of [375, 768, 1366, 1920]) {
       expect(content).toContain("INFERA DATA SCIENCE EVIDENCE REPORT");
       expect(content).toContain("Aritra Saha");
     }
-    if (width === 1366) {
+    if (width === 1366 && info.project.name === "chromium") {
       await page
         .context()
         .grantPermissions(["clipboard-read", "clipboard-write"]);
@@ -569,10 +569,10 @@ test("error: unavailable backend message and safe catalog retry", async ({
   );
   await page.goto("/dashboard");
   await expect(
-    page.getByRole("alert").filter({ hasText: "temporarily unavailable" }),
+    page.getByRole("alert").filter({ hasText: "does not identify whether this is a cold start" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("alert").filter({ hasText: "temporarily unavailable" }),
+    page.getByRole("alert").filter({ hasText: "does not identify whether this is a cold start" }),
   ).not.toContainText("dataset is invalid");
   await page.unroute("**/api/samples");
   await page.getByRole("button", { name: "Retry sample catalog" }).click();

@@ -1,8 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 // Deliberately injected transport failures validate the recovery state machine.
-// Real workflows in workflows.spec.ts never mock computation or health responses.
-test("error: transient health response retries then validates the real backend", async ({
+test("error: an explicit backend startup response retries and validates health", async ({
   page,
 }) => {
   await page.clock.install();
@@ -10,71 +9,32 @@ test("error: transient health response retries then validates the real backend",
   await page.route("**/health", (route) => {
     calls++;
     return calls === 1
-      ? route.fulfill({ status: 503, body: "Starting upstream" })
-      : route.continue();
+      ? route.fulfill({ status: 503, body: '{"detail":"Service is starting"}', contentType: "application/json" })
+      : route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: '{"status":"ok","project":"Infera","version":"0.5.0","engine_status":"ready"}',
+        });
   });
+  await page.route("**/api/samples", (route) => route.fulfill({ status: 503, body: "temporarily unavailable" }));
+  await page.route("**/api/diagnostic", (route) => route.fulfill({ status: 503, body: "temporarily unavailable" }));
   await page.goto("/dashboard");
   await expect(
-    page.getByText("Starting the analysis engine", { exact: true }).first(),
+    page.getByText("Backend reports that it is starting", { exact: true }).first(),
   ).toBeVisible();
   await expect(
-    page.getByText(/bounded health checks allow up to two minutes/i),
+    page.getByText(/bounded connection window/i),
   ).toBeVisible();
-  await page.clock.fastForward(2000);
+  await page.clock.fastForward(1500);
   await expect(
     page.getByRole("button", { name: "Retry analysis engine connection" }),
   ).toContainText("Engine connected");
   expect(calls).toBe(2);
-  await page.getByRole("button", { name: /Housing Prices/ }).click();
-  await page.getByLabel("Analysis target").selectOption("price");
-  await page.getByRole("button", { name: "Launch Full Analysis" }).click();
-  await expect(
-    page.getByRole("tab", { name: "Overview", exact: true }),
-  ).toBeVisible({ timeout: 150000 });
-  await page.clock.fastForward(120000);
-  expect(calls, "Rendering analysis must not restart the connection loop").toBe(
-    2,
-  );
+  await page.clock.fastForward(180000);
+  expect(calls, "A completed health check must not restart after navigation-like rerenders").toBe(2);
 });
 
-test("error: a Render-like cold start can take over ninety seconds", async ({
-  page,
-}) => {
-  await page.clock.install();
-  let calls = 0;
-  await page.route("**/health", (route) => {
-    calls++;
-    return calls < 9
-      ? route.fulfill({ status: 503, body: "Instance is waking" })
-      : route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: '{"status":"ok","project":"Infera","version":"0.1.0"}',
-        });
-  });
-  await page.goto("/dashboard");
-  await expect.poll(() => calls).toBe(1);
-  for (const [delay, count] of [
-    [2000, 2],
-    [4000, 3],
-    [8000, 4],
-    [12000, 5],
-    [16000, 6],
-    [20000, 7],
-    [20000, 8],
-    [20000, 9],
-  ]) {
-    await page.clock.fastForward(delay);
-    await expect.poll(() => calls).toBe(count);
-  }
-  expect(calls).toBe(9);
-  await expect(
-    page.getByRole("button", { name: "Retry analysis engine connection" }),
-  ).toContainText("Engine connected");
-  expect(calls).toBe(9);
-});
-
-test("error: bounded health attempts stop, with manual recovery", async ({
+test("error: a generic upstream 503 is retried without claiming a cold start", async ({
   page,
 }) => {
   await page.clock.install();
@@ -83,39 +43,140 @@ test("error: bounded health attempts stop, with manual recovery", async ({
     calls++;
     return route.fulfill({ status: 503, body: "Unavailable upstream" });
   });
+  await page.route("**/api/samples", (route) => route.fulfill({ status: 503, body: "temporarily unavailable" }));
   await page.goto("/dashboard");
   await expect.poll(() => calls).toBe(1);
-  for (const [delay, count] of [
-    [2000, 2],
-    [4000, 3],
-    [8000, 4],
-    [12000, 5],
-    [16000, 6],
-    [20000, 7],
-    [20000, 8],
-    [20000, 9],
-  ]) {
+  await expect(page.locator(".engine-banner")).toContainText("does not identify");
+  await expect(page.locator(".engine-banner")).toContainText("Retrying the engine connection");
+  await expect(page.locator(".engine-banner")).not.toContainText("Backend reports that it is starting");
+  for (const [delay, count] of [[1500, 2], [4000, 3], [8000, 4]]) {
     await page.clock.fastForward(delay);
     await expect.poll(() => calls).toBe(count);
   }
+  expect(calls).toBe(4);
   await expect(
     page.getByRole("button", { name: "Retry connection", exact: true }),
   ).toBeVisible();
-  await expect(page.locator(".engine-banner[role=alert]")).toContainText(
-    "HTTP 503",
-  );
+  await expect(page.locator(".engine-banner[role=alert]")).toContainText("HTTP 503");
   await page.clock.fastForward(300000);
-  expect(calls).toBe(9);
+  expect(calls).toBe(4);
   await page.unroute("**/health");
-  await page
-    .getByRole("button", { name: "Retry connection", exact: true })
-    .click();
+  await page.route("**/health", (route) => {
+    calls++;
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: '{"status":"ok","project":"Infera","version":"0.5.0"}',
+    });
+  });
+  await page.getByRole("button", { name: "Retry connection", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Retry analysis engine connection" })).toContainText("Engine connected");
+  expect(calls).toBe(5);
+});
+
+test("error: opaque browser network failure stops and manual retry recovers", async ({
+  page,
+}) => {
+  await page.clock.install();
+  let calls = 0;
+  await page.route("**/health", (route) => {
+    calls++;
+    return route.abort();
+  });
+  await page.route("**/api/samples", (route) => route.abort());
+  await page.goto("/dashboard");
+  await expect.poll(() => calls).toBe(1);
+  await expect(page.locator(".engine-banner[role=alert]")).toContainText("unknown browser/network failure");
   await expect(
-    page.getByRole("button", { name: "Retry analysis engine connection" }),
-  ).toContainText("Engine connected");
-  await expect(
-    page.getByRole("button", { name: /Housing Prices/ }),
-  ).toBeVisible();
+    page.getByRole("link", { name: "Open backend health check" }),
+  ).toHaveAttribute("href", /\/health$/);
+  await page.getByRole("button", { name: "View connection diagnostics" }).click();
+  await expect(page.locator(".engine-banner")).toContainText("Failure type:");
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await page.clock.fastForward(180000);
+  expect(calls, "Visibility changes must not restart a failed sequence").toBe(1);
+
+  await page.unroute("**/health");
+  await page.route("**/health", (route) => {
+    calls++;
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: '{"status":"ok","project":"Infera","version":"0.5.0"}',
+    });
+  });
+  await page.getByRole("button", { name: "Retry connection", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Retry analysis engine connection" })).toContainText("Engine connected");
+  expect(calls).toBe(2);
+});
+
+test("error: an actual browser fetch timeout is reported and retried within bounds", async ({
+  page,
+}) => {
+  await page.clock.install();
+  let calls = 0;
+  await page.route("**/health", async () => {
+    calls++;
+    await new Promise<void>(() => undefined);
+  });
+  await page.route("**/api/samples", (route) => route.abort());
+  await page.goto("/dashboard");
+  await expect.poll(() => calls).toBe(1);
+  await page.clock.fastForward(25_000);
+  await expect(page.locator(".engine-banner")).toContainText("Health request 1 timed out");
+  await expect(page.locator(".engine-banner")).toContainText("Retrying the engine connection");
+  await page.getByRole("button", { name: "View connection diagnostics" }).click();
+  await expect(page.locator(".engine-banner")).toContainText("Failure type:");
+  expect(calls).toBe(1);
+});
+
+test("error: offline and online browser events recover once", async ({ page }) => {
+  let healthCalls = 0;
+  await page.route("**/health", (route) => {
+    healthCalls++;
+    return route.continue();
+  });
+  await page.goto("/dashboard");
+  await expect(page.getByRole("button", { name: "Retry analysis engine connection" })).toContainText("Engine connected");
+  expect(healthCalls).toBe(1);
+
+  await page.context().setOffline(true);
+  await expect(page.getByRole("button", { name: "Retry analysis engine connection" })).toContainText("Network offline");
+  await page.context().setOffline(false);
+  await expect(page.getByRole("button", { name: "Retry analysis engine connection" })).toContainText("Engine connected");
+  expect(healthCalls).toBe(2);
+});
+
+test("error: an older successful sample response cannot overwrite a newer health failure", async ({
+  page,
+}) => {
+  let releaseSample!: () => void;
+  const sampleGate = new Promise<void>((resolve) => { releaseSample = resolve; });
+  let healthCalls = 0;
+  let sampleCalls = 0;
+  await page.route("**/health", (route) => {
+    healthCalls++;
+    return route.fulfill({ status: 404, body: "not found" });
+  });
+  await page.route("**/api/samples", async (route) => {
+    sampleCalls++;
+    await sampleGate;
+    await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
+  });
+  await page.goto("/dashboard");
+  await expect(page.locator(".engine-banner[role=alert]")).toContainText("expected /health endpoint");
+  expect(healthCalls).toBe(1);
+  await expect.poll(() => sampleCalls).toBe(1);
+
+  await page.getByRole("button", { name: "Retry connection", exact: true }).click();
+  await expect.poll(() => healthCalls).toBe(2);
+  await expect(page.locator(".engine-banner[role=alert]")).toContainText("expected /health endpoint");
+
+  const oldSamplesResponse = page.waitForResponse((response) => response.url().endsWith("/api/samples"));
+  releaseSample();
+  expect((await oldSamplesResponse).status()).toBe(200);
+  await expect(page.locator(".engine-banner[role=alert]")).toContainText("expected /health endpoint");
+  await expect(page.getByRole("button", { name: "Retry analysis engine connection" })).toContainText("Backend deployment problem");
 });
 
 test("error: invalid health schema is incompatible and never claims connected", async ({
@@ -130,6 +191,7 @@ test("error: invalid health schema is incompatible and never claims connected", 
       body: '{"status":"ok"}',
     });
   });
+  await page.route("**/api/samples", (route) => route.fulfill({ status: 503, body: "temporarily unavailable" }));
   await page.goto("/dashboard");
   await expect(page.locator(".engine-banner[role=alert]")).toContainText(
     "does not match this frontend version",
@@ -147,7 +209,7 @@ test("error: invalid health schema is incompatible and never claims connected", 
   ).toContainText("Engine connected");
 });
 
-test("error: a missing health endpoint is reported as a deployment problem", async ({
+test("error: a validated API response clears a stale health endpoint failure", async ({
   page,
 }) => {
   let calls = 0;
@@ -155,13 +217,18 @@ test("error: a missing health endpoint is reported as a deployment problem", asy
     calls++;
     return route.fulfill({ status: 404, body: "not found" });
   });
+  await page.route("**/api/samples", async (route) => {
+    // Let the failed health probe render first, then use the real local API.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await route.continue();
+  });
   await page.goto("/dashboard");
   await expect(page.locator(".engine-banner[role=alert]")).toContainText(
     "does not provide the expected /health endpoint",
   );
   await expect(
     page.getByRole("button", { name: "Retry analysis engine connection" }),
-  ).toContainText("Backend deployment problem");
+  ).toContainText("Engine connected");
   expect(calls).toBe(1);
 });
 

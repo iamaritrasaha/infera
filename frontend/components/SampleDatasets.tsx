@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AnalysisResponse, SampleDatasetInfo, UploadResponse } from "@/lib/types";
 import { errorMessage, fetchSamples, loadSampleDataset } from "@/lib/api";
 import { VERIFIED_HOUSING_EXAMPLE } from "@/lib/verified-example";
-import { useEngine } from "./EngineConnection";
 import { ArrowRight, CheckCircle2, Database, Loader2, Sparkles } from "lucide-react";
+import { useEngine } from "./EngineConnection";
 
 
 
@@ -20,36 +20,46 @@ export function SampleDatasets({ onLoadSample, onLoadExample }: SampleDatasetsPr
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const catalogLoaded = useRef(false);
+  const catalogRequestInFlight = useRef(false);
+  const mounted = useRef(false);
 
-  const reload = async () => {
+  const loadCatalog = useCallback(async (force = false) => {
+    if (catalogRequestInFlight.current || (catalogLoaded.current && !force)) return;
+    catalogRequestInFlight.current = true;
+    await Promise.resolve();
     setCatalogLoading(true);
     setError(null);
     try {
-      setSamples(await fetchSamples());
+      const result = await fetchSamples();
+      catalogLoaded.current = true;
+      if (mounted.current) setSamples(result);
     } catch (e) {
-      setError(errorMessage(e));
+      if (mounted.current) setError(errorMessage(e));
     } finally {
-      setCatalogLoading(false);
+      catalogRequestInFlight.current = false;
+      if (mounted.current) setCatalogLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    if (state !== "CONNECTED") return;
-    let active = true;
-    fetchSamples()
-      .then((s) => {
-        if (active) setSamples(s);
-      })
-      .catch((e) => {
-        if (active) setError(errorMessage(e));
-      })
-      .finally(() => {
-        if (active) setCatalogLoading(false);
-      });
+    mounted.current = true;
+    const request = window.setTimeout(() => void loadCatalog(), 0);
     return () => {
-      active = false;
+      window.clearTimeout(request);
+      mounted.current = false;
     };
-  }, [state]);
+  }, [loadCatalog]);
+
+  useEffect(() => {
+    // Try the catalog once more after a real API health response. A failed
+    // health indicator never blocks uploads or other API calls.
+    if (state !== "CONNECTED") return;
+    const request = window.setTimeout(() => void loadCatalog(), 0);
+    return () => window.clearTimeout(request);
+  }, [loadCatalog, state]);
+
+  const reload = () => loadCatalog(true);
 
   const select = async (id: string) => {
     if (loadingId) return;
@@ -110,7 +120,7 @@ export function SampleDatasets({ onLoadSample, onLoadExample }: SampleDatasetsPr
           className="flex items-center gap-2 text-xs text-slate-400"
         >
           <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
-          Loading the sample catalog when the engine connects.
+          Loading sample datasets from the analysis engine.
         </p>
       )}
 
