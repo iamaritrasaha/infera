@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -18,6 +19,12 @@ import {
   Workflow,
 } from "lucide-react";
 import { ProductPreview } from "@/components/ProductPreview";
+
+export const metadata: Metadata = {
+  title: "Turn Data Into Evidence",
+  description: "Explore structured data with Python-computed statistics, transparent limitations, and downloadable evidence reports.",
+  alternates: { canonical: "/" },
+};
 
 const capabilities = [
   [

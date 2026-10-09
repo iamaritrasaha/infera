@@ -4,6 +4,8 @@
 
 **Turn data into evidence.**
 
+Current release: **v0.5.0**.
+
 Infera is an open-source automated data science platform that turns structured datasets into inspectable statistical findings, model comparisons, and downloadable evidence reports. It is independently created and maintained by **Aritra Saha**.
 
 I built Infera to make statistical analysis and machine learning accessible without writing extensive processing code for every dataset. Its Python-first engine performs the computations; the Next.js interface presents the results and their limitations.
@@ -25,6 +27,9 @@ The production site is publicly accessible and uses Render Free with the existin
 - Regression: median baseline, linear, Ridge, Lasso, ElasticNet, random forest, and gradient boosting. Metrics include R², MAE, and RMSE.
 - Classification: prior baseline, logistic regression, random forest, and gradient boosting. Metrics include accuracy, macro precision/recall/F1, weighted F1, ROC-AUC when applicable, and confusion matrices.
 - K-Means/DBSCAN clustering, two-component PCA, and time-series ADF/autocorrelation diagnostics. No forecasts are generated.
+- Interactive Python-backed group, trend, and relationship exploration with bounded category, number, and date filters. Results show matched and usable sample sizes; trend intervals follow observed date cadence.
+- Explicit local-browser analysis snapshots. They retain computed summaries and do not store uploaded rows or session tokens.
+- Markdown/HTML reports append the current filtered explorer result separately from the full-dataset analysis report.
 - Expandable evidence drawers, Markdown/HTML report downloads, clipboard export, and browser printing to PDF.
 - Four bundled **synthetic** examples: housing, customer churn, student performance, and retail sales. Their dimensions are read from the actual files.
 
@@ -49,8 +54,8 @@ All computation runs in the backend. The frontend does not require a paid API, e
 | `frontend/app`, `frontend/components` | Pages, dataset workspace, charts, analysis tabs |
 | `frontend/lib` | API client, TypeScript types, runtime response validation |
 | `frontend/tests` | Playwright tests against the real local or deployed API |
-| `backend/app/api` | Upload, sample, analysis, result, report, health endpoints |
-| `backend/app/analysis` | Profiling, statistics, modeling, insights, reports |
+| `backend/app/api` | Upload, sample, analysis, exploration, result, report, health endpoints |
+| `backend/app/analysis` | Profiling, statistics, modeling, insights, bounded exploration, reports |
 | `backend/app/core`, `backend/app/services` | Configuration, stream limits, session ownership, caches |
 | `backend/tests` | pytest integration and scientific regression tests |
 | `sample_data` | Synthetic CSV samples and reproducible generator |
@@ -94,12 +99,15 @@ Open `http://localhost:3000`. The API health endpoint is `http://localhost:8000/
 | GET | `/health`, `/api/samples` | Public service status/catalog |
 | POST | `/api/upload`, `/api/samples/{sample_id}/load` | Anonymous session required |
 | POST | `/api/analyze` | Session owning the dataset required |
+| POST | `/api/explore`, `/api/explore/options` | Session owning the dataset required; results and selector options are bounded |
 | GET | `/api/results/{dataset_id}` | Session owning the dataset required |
 | GET | `/api/results/{dataset_id}/report?format=markdown` or `html` | Session owning the dataset required |
 
 The browser creates a 256-bit random token in session storage and sends `X-Infera-Session`. The backend stores its hash alongside the dataset. Knowing a dataset ID does not authorize access. Losing the session token requires uploading again; these sessions are not user accounts. Tokens never appear in report URLs.
 
 Uploads are counted while streaming before multipart parsing, with a small multipart envelope allowance. Only one upload body and one heavy parse/profile/analysis operation are admitted at a time. Files are parsed from temporary buffers; multipart parsing may use temporary disk spooling, which is closed after processing. Dataset contents are not logged or permanently saved. Restarting the API clears all caches. Dataset caches expire after one hour of inactivity; result caches expire one hour after computation. Memory pressure can evict entries earlier.
+
+Browser snapshots are saved only when requested and remain in IndexedDB on that browser. They contain a versioned summary of computed findings, not uploaded rows, preview values, credentials, dataset IDs, or session tokens. Some category labels and aggregate statistics remain and may be sensitive. A snapshot is read-only and represents a past computation; recomputing it requires an active dataset session or a re-upload.
 
 ## Limits and methodology
 
@@ -143,6 +151,8 @@ npm run test:e2e
 ```
 
 Tests cover sample selection, CSV upload/drag-and-drop, analysis tabs, regression/classification, PCA/clustering/time-series views, evidence drawers, report downloads, error/retry states, browser errors, and widths 375/768/1366/1920. Expected error simulations are separate from workflows using the real API. [AUDIT.md](AUDIT.md) records executed checks and unresolved infrastructure limitations.
+
+GitHub Actions runs backend Ruff/pytest, frontend ESLint/TypeScript, and a production frontend build on pull requests and pushes to `main`. The v0.5.0 implementation and verification record is [V0.5.0_RELEASE_REPORT.md](V0.5.0_RELEASE_REPORT.md).
 
 To test the deployed application without starting local servers, run from `frontend/`:
 

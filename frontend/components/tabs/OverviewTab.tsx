@@ -9,6 +9,7 @@ interface OverviewTabProps {
   data: AnalysisResponse;
   onSelectTarget?: (target: string) => void;
   onApplyFocus?: (focus: AnalysisFocus) => Promise<void>;
+  onExploreFinding?: (finding: KeyFinding) => void;
 }
 
 const goalLabels: Record<string, string> = {
@@ -43,7 +44,7 @@ function displayEvidence(value: unknown) {
   return JSON.stringify(value);
 }
 
-function FindingCard({ finding }: { finding: KeyFinding }) {
+function FindingCard({ finding, onExploreFinding }: { finding: KeyFinding; onExploreFinding?: (finding: KeyFinding) => void }) {
   return (
     <article className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 sm:p-5">
       <div className="flex flex-wrap items-center gap-2">
@@ -62,6 +63,9 @@ function FindingCard({ finding }: { finding: KeyFinding }) {
         >
           View supporting chart
         </a>
+        {onExploreFinding && <button type="button" onClick={() => onExploreFinding(finding)} className="text-xs font-medium text-cyan-300 underline decoration-cyan-800 underline-offset-4 hover:text-cyan-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-400">
+          Explore this finding
+        </button>}
         <details className="group">
           <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-white">
             Evidence and limitation <ChevronDown size={13} className="transition-transform group-open:rotate-180" />
@@ -85,12 +89,15 @@ function FindingCard({ finding }: { finding: KeyFinding }) {
   );
 }
 
-function FindingVisual({ finding }: { finding: KeyFinding }) {
+function FindingVisual({ finding, onExploreFinding }: { finding: KeyFinding; onExploreFinding?: (finding: KeyFinding) => void }) {
   if (!finding.chart) return null;
   return (
     <article className="rounded-xl border border-slate-800 bg-slate-900/35 p-4">
       <InsightChart chart={finding.chart} id={`finding-chart-${finding.id}`} />
       <p className="mt-3 text-sm leading-6 text-slate-300">{finding.interpretation}</p>
+      {onExploreFinding && <button type="button" onClick={() => onExploreFinding(finding)} className="mt-3 rounded-lg border border-cyan-800 px-3 py-1.5 text-xs font-medium text-cyan-200 hover:bg-cyan-950/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-400">
+        Explore this finding
+      </button>}
       <details className="mt-3 text-xs text-slate-400">
         <summary className="cursor-pointer font-medium text-slate-300">Inspect the values behind this chart</summary>
         <dl className="mt-3 grid gap-x-4 gap-y-2 sm:grid-cols-2">
@@ -106,7 +113,7 @@ function FindingVisual({ finding }: { finding: KeyFinding }) {
   );
 }
 
-export function OverviewTab({ data, onSelectTarget, onApplyFocus }: OverviewTabProps) {
+export function OverviewTab({ data, onSelectTarget, onApplyFocus, onExploreFinding }: OverviewTabProps) {
   const { schema, health_score, quality, preview_rows, problem_detection } = data;
   const discovery = data.insight_discovery;
   const [searchTerm, setSearchTerm] = useState("");
@@ -189,7 +196,7 @@ export function OverviewTab({ data, onSelectTarget, onApplyFocus }: OverviewTabP
         </div>
         {discovery.key_findings.length > 0 ? (
           <div className="grid gap-3 lg:grid-cols-2">
-            {discovery.key_findings.map((finding) => <FindingCard key={finding.id} finding={finding} />)}
+            {discovery.key_findings.map((finding) => <FindingCard key={finding.id} finding={finding} onExploreFinding={onExploreFinding} />)}
           </div>
         ) : (
           <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-5 text-sm leading-6 text-slate-300">
@@ -204,7 +211,7 @@ export function OverviewTab({ data, onSelectTarget, onApplyFocus }: OverviewTabP
             <TrendingUp size={16} className="text-cyan-300" />
             <h3 id="patterns-title" className="text-sm font-semibold text-white">Trends and patterns</h3>
           </div>
-          <div className="space-y-3">{timeFindings.map((item) => <FindingVisual key={item.id} finding={item} />)}</div>
+          <div className="space-y-3">{timeFindings.map((item) => <FindingVisual key={item.id} finding={item} onExploreFinding={onExploreFinding} />)}</div>
         </section>
       )}
 
@@ -214,14 +221,14 @@ export function OverviewTab({ data, onSelectTarget, onApplyFocus }: OverviewTabP
             <Database size={16} className="text-cyan-300" />
             <h3 id="relationships-title" className="text-sm font-semibold text-white">Relationships and comparisons</h3>
           </div>
-          <div className="space-y-3">{relationshipFindings.map((item) => <FindingVisual key={item.id} finding={item} />)}</div>
+          <div className="space-y-3">{relationshipFindings.map((item) => <FindingVisual key={item.id} finding={item} onExploreFinding={onExploreFinding} />)}</div>
         </section>
       )}
 
       {modelFindings.length > 0 && (
         <section aria-labelledby="model-finding-title">
           <h3 id="model-finding-title" className="mb-3 text-sm font-semibold text-white">Prediction performance</h3>
-          <div className="space-y-3">{modelFindings.map((item) => <FindingVisual key={item.id} finding={item} />)}</div>
+          <div className="space-y-3">{modelFindings.map((item) => <FindingVisual key={item.id} finding={item} onExploreFinding={onExploreFinding} />)}</div>
         </section>
       )}
 

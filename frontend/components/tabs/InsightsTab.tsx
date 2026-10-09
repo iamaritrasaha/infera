@@ -1,14 +1,15 @@
 "use client";
 
 import React, { useState } from "react";
-import { AnalysisResponse } from "@/lib/types";
+import { AnalysisResponse, KeyFinding } from "@/lib/types";
 import { Calculator, ChevronDown, ChevronUp, ShieldCheck, Sparkles } from "lucide-react";
 
 interface InsightsTabProps {
   data: AnalysisResponse;
+  onExploreFinding?: (finding: KeyFinding) => void;
 }
 
-export function InsightsTab({ data }: InsightsTabProps) {
+export function InsightsTab({ data, onExploreFinding }: InsightsTabProps) {
   const { insights } = data;
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filterCat, setFilterCat] = useState<string>("all");
@@ -93,6 +94,15 @@ export function InsightsTab({ data }: InsightsTabProps) {
                       <span>{isExpanded ? "Hide Calculation" : "View Evidence"}</span>
                       {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                     </button>
+                    {onExploreFinding && data.insight_discovery.key_findings.find((finding) => finding.id === ins.id) && (
+                      <button
+                        type="button"
+                        onClick={() => onExploreFinding(data.insight_discovery.key_findings.find((finding) => finding.id === ins.id)!)}
+                        className="rounded-lg border border-cyan-800 px-3 py-1.5 text-xs font-medium text-cyan-200 hover:bg-cyan-950/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-400"
+                      >
+                        Explore this finding
+                      </button>
+                    )}
                   </div>
                 </div>
 

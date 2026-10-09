@@ -24,6 +24,7 @@ export function InsightChart({ chart, id }: { chart: InsightChartData; id?: stri
   const points = chart.points;
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [downloaded, setDownloaded] = useState(false);
+  const [activePoint, setActivePoint] = useState<number | null>(null);
 
   if (!points.length) return null;
 
@@ -153,7 +154,23 @@ export function InsightChart({ chart, id }: { chart: InsightChartData; id?: stri
             const height = Math.max(1, Math.abs(baseline - barTop));
             return (
               <g key={`${point.x}-${index}`}>
-                <rect x={x(index) - barWidth / 2} y={top} width={barWidth} height={height} rx="3" fill="#38bdf8" fillOpacity="0.78">
+                <rect
+                  x={x(index) - barWidth / 2}
+                  y={top}
+                  width={barWidth}
+                  height={height}
+                  rx="3"
+                  fill="#38bdf8"
+                  fillOpacity="0.78"
+                  tabIndex={0}
+                  role="img"
+                  aria-label={`${chart.x_label}: ${point.x}; ${chart.y_label}: ${numberLabel(point.y)}. ${point.detail ?? ""}`}
+                  className="focus-visible:stroke-white focus-visible:stroke-[3]"
+                  onMouseEnter={() => setActivePoint(index)}
+                  onMouseLeave={() => setActivePoint(null)}
+                  onFocus={() => setActivePoint(index)}
+                  onBlur={() => setActivePoint(null)}
+                >
                   <title>{`${chart.x_label}: ${point.x}; ${chart.y_label}: ${numberLabel(point.y)}. ${point.detail ?? ""}`}</title>
                 </rect>
               </g>
@@ -164,7 +181,23 @@ export function InsightChart({ chart, id }: { chart: InsightChartData; id?: stri
             <path d={linePath} fill="none" stroke="#38bdf8" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
           )}
           {(chart.kind === "line" || chart.kind === "scatter") && points.map((point, index) => (
-            <circle key={`${point.x}-${index}`} cx={x(index)} cy={y(point.y)} r={chart.kind === "line" ? 3.4 : 4} fill="#67e8f9" stroke="#082f49" strokeWidth="1.5">
+            <circle
+              key={`${point.x}-${index}`}
+              cx={x(index)}
+              cy={y(point.y)}
+              r={chart.kind === "line" ? 3.4 : 4}
+              fill="#67e8f9"
+              stroke="#082f49"
+              strokeWidth="1.5"
+              tabIndex={0}
+              role="img"
+              aria-label={`${chart.x_label}: ${point.x}; ${chart.y_label}: ${numberLabel(point.y)}. ${point.detail ?? ""}`}
+              className="focus-visible:stroke-white focus-visible:stroke-[3]"
+              onMouseEnter={() => setActivePoint(index)}
+              onMouseLeave={() => setActivePoint(null)}
+              onFocus={() => setActivePoint(index)}
+              onBlur={() => setActivePoint(null)}
+            >
               <title>{`${chart.x_label}: ${point.x}; ${chart.y_label}: ${numberLabel(point.y)}. ${point.detail ?? ""}`}</title>
             </circle>
           ))}
@@ -195,7 +228,11 @@ export function InsightChart({ chart, id }: { chart: InsightChartData; id?: stri
           </text>
         </svg>
       </div>
-      <p className="mt-1 text-[11px] text-slate-500">Hover over a mark to inspect its value. The evidence below lists the computed values.</p>
+      <p role="status" aria-live="polite" className="mt-1 min-h-5 text-[11px] text-slate-500">
+        {activePoint == null
+          ? "Hover, tap, or focus a mark to inspect its value. The evidence below lists the computed values."
+          : `${chart.x_label}: ${String(points[activePoint].x)} · ${chart.y_label}: ${numberLabel(points[activePoint].y)}${points[activePoint].detail ? ` · ${points[activePoint].detail}` : ""}`}
+      </p>
     </figure>
   );
 }

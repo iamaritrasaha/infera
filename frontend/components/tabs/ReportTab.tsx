@@ -1,8 +1,9 @@
 "use client";
 import { useState } from "react";
 import Image from "next/image";
-import { AnalysisResponse } from "@/lib/types";
+import { AnalysisResponse, ExplorationResponse } from "@/lib/types";
 import { downloadReport, errorMessage } from "@/lib/api";
+import { appendExplorationReport, downloadReportText } from "@/lib/exploration-report";
 import {
   Check,
   Copy,
@@ -13,13 +14,14 @@ import {
   Printer,
 } from "lucide-react";
 
-export function ReportTab({ data }: { data: AnalysisResponse }) {
+export function ReportTab({ data, exploration = null }: { data: AnalysisResponse; exploration?: ExplorationResponse | null }) {
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const markdown = appendExplorationReport(data, exploration);
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(data.reports.markdown);
+      await navigator.clipboard.writeText(markdown);
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
     } catch {
@@ -32,7 +34,8 @@ export function ReportTab({ data }: { data: AnalysisResponse }) {
     setBusy(true);
     setError(null);
     try {
-      await downloadReport(data.dataset_id, format);
+      if (exploration) downloadReportText(data.dataset_name, format, markdown);
+      else await downloadReport(data.dataset_id, format);
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -50,8 +53,9 @@ export function ReportTab({ data }: { data: AnalysisResponse }) {
           </div>
         </div>
         <p className="text-xs text-slate-400 leading-7">
-          Your dataset’s findings, methods, model comparisons, and limitations.
-          Every numerical result comes from this analysis.
+          {exploration
+            ? "The full-dataset report is followed by the selected filtered exploration, including its active filters and sample sizes."
+            : "Your dataset’s findings, methods, model comparisons, and limitations. Every numerical result comes from this analysis."}
         </p>
         <div className="report-formats">
           <button
@@ -117,7 +121,7 @@ export function ReportTab({ data }: { data: AnalysisResponse }) {
           Markdown preview
         </h3>
         <pre className="whitespace-pre-wrap break-words text-xs leading-7 font-mono text-slate-300">
-          {data.reports.markdown}
+          {markdown}
         </pre>
       </article>
     </div>

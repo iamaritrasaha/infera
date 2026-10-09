@@ -2,11 +2,16 @@
 import {
   AnalysisFocus,
   AnalysisResponse,
+  ExploreRequest,
+  ExplorationOptions,
+  ExplorationResponse,
   SampleDatasetInfo,
   UploadResponse,
 } from "./types";
 import {
   analysisSchema,
+  explorationOptionsSchema,
+  explorationSchema,
   samplesSchema,
   uploadSchema,
 } from "./response-schemas";
@@ -298,6 +303,47 @@ export async function executeFullAnalysis(
     ),
     analysisSchema,
   ) as Promise<AnalysisResponse>;
+}
+
+export async function getExplorationOptions(
+  datasetId: string,
+  column: string,
+  signal?: AbortSignal,
+): Promise<ExplorationOptions> {
+  return json(
+    await request(
+      "/api/explore/options",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataset_id: datasetId, column }),
+      },
+      true,
+      30000,
+      signal,
+    ),
+    explorationOptionsSchema,
+  );
+}
+
+export async function runExploration(
+  payload: ExploreRequest,
+  signal?: AbortSignal,
+): Promise<ExplorationResponse> {
+  return json(
+    await request(
+      "/api/explore",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+      true,
+      30000,
+      signal,
+    ),
+    explorationSchema,
+  );
 }
 export async function fetchAnalysisResults(
   datasetId: string,

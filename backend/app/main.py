@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import analysis, health, results, samples, upload
+from app.api.routes import analysis, exploration, health, results, samples, upload
 from app.core.config import settings
 from app.core.limits import UploadLimitMiddleware
 from app.core.logging import logger
@@ -74,6 +74,7 @@ def create_app() -> FastAPI:
     app.include_router(upload.router)
     app.include_router(samples.router)
     app.include_router(analysis.router)
+    app.include_router(exploration.router)
     app.include_router(results.router)
 
     # Human-friendly global exception handling

@@ -1,4 +1,5 @@
 import Image from "next/image";
+import type { Metadata } from "next";
 import {
   ArrowRight,
   Braces,
@@ -7,6 +8,12 @@ import {
   FlaskConical,
   ShieldCheck,
 } from "lucide-react";
+
+export const metadata: Metadata = {
+  title: "About the Project",
+  description: "Learn about Infera’s Python-first architecture, statistical principles, and independent creator, Aritra Saha.",
+  alternates: { canonical: "/about" },
+};
 
 export default function AboutPage() {
   return (

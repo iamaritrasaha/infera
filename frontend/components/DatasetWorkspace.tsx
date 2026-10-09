@@ -7,6 +7,8 @@ import { LocalFilePreview, UploadZone } from "./UploadZone";
 import { SampleDatasets } from "./SampleDatasets";
 import { AnalysisView } from "./AnalysisView";
 import { EngineBanner } from "./EngineConnection";
+import { SavedAnalysisLibrary, SavedAnalysisViewer } from "./SavedAnalysisLibrary";
+import type { SavedAnalysisSnapshot } from "@/lib/snapshots";
 import {
   Activity,
   ArrowRight,
@@ -85,12 +87,16 @@ export function DatasetWorkspace() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isUploadingPreview, setIsUploadingPreview] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResponse | null>(null);
+  const [isPrecomputedExample, setIsPrecomputedExample] = useState(false);
+  const [savedSnapshot, setSavedSnapshot] = useState<SavedAnalysisSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = (data: UploadResponse) => {
     setUploadData(data);
     setLocalPreview(null);
     setAnalysisResult(null);
+    setIsPrecomputedExample(false);
+    setSavedSnapshot(null);
     setError(null);
     setSelectedTarget(data.recommended_target || "");
   };
@@ -99,6 +105,8 @@ export function DatasetWorkspace() {
     setUploadData(null);
     setLocalPreview(null);
     setAnalysisResult(null);
+    setIsPrecomputedExample(false);
+    setSavedSnapshot(null);
     setError(null);
   };
 
@@ -147,8 +155,10 @@ export function DatasetWorkspace() {
     <div className="workspace-container">
       <EngineBanner />
 
-      {analysisResult ? (
-        <AnalysisView initialData={analysisResult} onReset={reset} />
+      {savedSnapshot ? (
+        <SavedAnalysisViewer snapshot={savedSnapshot} onClose={() => setSavedSnapshot(null)} />
+      ) : analysisResult ? (
+        <AnalysisView initialData={analysisResult} onReset={reset} source={isPrecomputedExample ? "precomputed_example" : "computed"} />
       ) : !uploadData ? (
         <div className="dataset-start">
           <div className="workspace-intro">
@@ -272,9 +282,13 @@ export function DatasetWorkspace() {
           <div className="sample-section">
             <SampleDatasets
               onLoadSample={load}
-              onLoadExample={(example) => setAnalysisResult(example)}
+              onLoadExample={(example) => {
+                setAnalysisResult(example);
+                setIsPrecomputedExample(true);
+              }}
             />
           </div>
+          <SavedAnalysisLibrary onOpen={setSavedSnapshot} />
         </div>
       ) : (
         <div className="staging-panel">

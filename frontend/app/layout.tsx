@@ -22,12 +22,18 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Infera",
     description: "Turn data into evidence.",
+    siteName: "Infera",
+    type: "website",
+    url: "https://infera-omega.vercel.app",
     images: [
       { url: "/infera-icon.png", width: 512, height: 512, alt: "Infera" },
     ],
   },
-  twitter: { card: "summary", title: "Infera", images: ["/infera-icon.png"] },
-  title: "Infera: Automated Data Science Platform | Turn Data Into Evidence",
+  twitter: { card: "summary", title: "Infera", description: "Turn data into evidence with inspectable Python computations.", images: ["/infera-icon.png"] },
+  title: {
+    default: "Infera: Data Exploration & Evidence",
+    template: "%s | Infera",
+  },
   description:
     "Upload structured datasets and automatically profile quality, formulate problems, test hypotheses, compare machine learning models, and generate evidence-backed findings.",
 };

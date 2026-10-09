@@ -1038,23 +1038,44 @@ def discover_insights(
     )
     findings: list[dict[str, Any]] = []
     used_ids: set[str] = set()
+    used_signatures: set[tuple[Any, ...]] = set()
+
+    def signature(item: dict[str, Any]) -> tuple[Any, ...]:
+        evidence = item.get("evidence", {})
+        finding_id = item["id"]
+        if finding_id in {"time-direction", "time-extremes"}:
+            return ("time-overview", evidence.get("time_column"), evidence.get("metric_column"))
+        if finding_id == "month-of-year-pattern":
+            return ("time-seasonality", evidence.get("time_column"), evidence.get("metric_column"))
+        if finding_id == "numeric-association":
+            return (finding_id, *sorted((evidence.get("feature_a"), evidence.get("feature_b"))))
+        return (finding_id,)
 
     # For explore_everything, ensure diverse representation across categories
     if effective_question in ("explore_everything", "all"):
         cat_seen: set[str] = set()
         for item in candidates:
-            if item["_score"] < 0.12 or item["id"] in used_ids or item["category"] in cat_seen:
+            item_signature = signature(item)
+            if (
+                item["_score"] < 0.12
+                or item["id"] in used_ids
+                or item_signature in used_signatures
+                or item["category"] in cat_seen
+            ):
                 continue
             used_ids.add(item["id"])
+            used_signatures.add(item_signature)
             cat_seen.add(item["category"])
             findings.append({key: value for key, value in item.items() if not key.startswith("_")})
             if len(findings) == 4:
                 break
 
     for item in candidates:
-        if item["_score"] < 0.12 or item["id"] in used_ids:
+        item_signature = signature(item)
+        if item["_score"] < 0.12 or item["id"] in used_ids or item_signature in used_signatures:
             continue
         used_ids.add(item["id"])
+        used_signatures.add(item_signature)
         findings.append({key: value for key, value in item.items() if not key.startswith("_")})
         if len(findings) == 5:
             break

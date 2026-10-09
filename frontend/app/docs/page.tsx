@@ -1,4 +1,5 @@
 import React from "react";
+import type { Metadata } from "next";
 import {
   BookOpen,
   Cpu,
@@ -7,6 +8,12 @@ import {
   Layers,
   ShieldCheck,
 } from "lucide-react";
+
+export const metadata: Metadata = {
+  title: "Documentation and Methodology",
+  description: "Read how Infera profiles datasets, selects statistical methods, evaluates models, and reports limitations.",
+  alternates: { canonical: "/docs" },
+};
 
 export default function DocsPage() {
   return (

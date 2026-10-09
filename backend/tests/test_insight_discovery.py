@@ -56,6 +56,22 @@ def test_increasing_time_pattern_uses_sorted_dates_and_independent_values() -> N
     assert trend["chart"]["points"][0]["x"] < trend["chart"]["points"][-1]["x"]
 
 
+def test_summary_does_not_repeat_time_overview_for_the_same_metric_and_dates() -> None:
+    dates = pd.date_range("2025-01-01", periods=60, freq="D")
+    values = np.arange(60, dtype=float) ** 1.2
+    result = analyze(
+        pd.DataFrame({"date": dates, "reading": values}),
+        numeric=["reading"],
+        dates=["date"],
+        question="time",
+    )
+
+    overview_findings = [
+        item for item in result["key_findings"] if item["id"] in {"time-direction", "time-extremes"}
+    ]
+    assert len(overview_findings) == 1
+
+
 def test_decreasing_time_pattern_is_reported_with_negative_change() -> None:
     frame = pd.DataFrame(
         {

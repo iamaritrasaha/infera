@@ -4,6 +4,9 @@ import React, { useState } from "react";
 import { AnalysisResponse } from "@/lib/types";
 import { CorrelationHeatmap } from "@/components/charts/CorrelationHeatmap";
 import { HistogramChart } from "@/components/charts/HistogramChart";
+import { InteractiveExplorer } from "./InteractiveExplorer";
+import type { ExplorationDrilldown } from "./InteractiveExplorer";
+import type { ExplorationResponse } from "@/lib/types";
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -11,31 +14,37 @@ import {
   GitCompare,
   Hash,
   Layers,
-  Sparkles,
 } from "lucide-react";
 
 interface ExploreTabProps {
   data: AnalysisResponse;
+  drilldown?: ExplorationDrilldown | null;
+  onExplorationResultChange?: (result: ExplorationResponse | null) => void;
 }
 
-export function ExploreTab({ data }: ExploreTabProps) {
-  const { descriptive_statistics, correlations, schema, insight_discovery } = data;
+export function ExploreTab({ data, drilldown, onExplorationResultChange }: ExploreTabProps) {
+  const { descriptive_statistics, correlations, schema } = data;
   const numDist = descriptive_statistics.numerical;
   const catDist = descriptive_statistics.categorical;
+  const evidence = drilldown?.finding.evidence;
+  const drillMetric = typeof evidence?.metric_column === "string" ? evidence.metric_column : null;
+  const drillFirst = typeof evidence?.feature_a === "string" ? evidence.feature_a : null;
+  const drillSecond = typeof evidence?.feature_b === "string" ? evidence.feature_b : null;
+  const drillGroup = typeof evidence?.group_column === "string" ? evidence.group_column : null;
 
   const [selectedNumCol, setSelectedNumCol] = useState<string>(
-    numDist[0]?.column || ""
+    (drillMetric && numDist.some((item) => item.column === drillMetric) ? drillMetric : numDist[0]?.column) || ""
   );
   const [selectedCatCol, setSelectedCatCol] = useState<string>(
-    catDist[0]?.column || ""
+    (drillGroup && catDist.some((item) => item.column === drillGroup) ? drillGroup : catDist[0]?.column) || ""
   );
 
   // Two-variable comparison state
   const [compareVarA, setCompareVarA] = useState<string>(
-    schema.numerical_columns[0] || ""
+    drillFirst && schema.columns.some((item) => item.name === drillFirst) ? drillFirst : schema.numerical_columns[0] || ""
   );
   const [compareVarB, setCompareVarB] = useState<string>(
-    schema.numerical_columns[1] || schema.categorical_columns[0] || ""
+    drillSecond && schema.columns.some((item) => item.name === drillSecond) ? drillSecond : schema.numerical_columns[1] || schema.categorical_columns[0] || ""
   );
 
   const currentNum = numDist.find((d) => d.column === selectedNumCol) || numDist[0];
@@ -58,53 +67,13 @@ export function ExploreTab({ data }: ExploreTabProps) {
       (c.feature_a === compareVarB && c.feature_b === compareVarA)
   );
 
-  const handleQuestionClick = (question: string) => {
-    // Attempt to match column names mentioned in question
-    const lower = question.toLowerCase();
-    const matchedNum = numDist.find((n) => lower.includes(n.column.toLowerCase()));
-    if (matchedNum) setSelectedNumCol(matchedNum.column);
-
-    const matchedCat = catDist.find((c) => lower.includes(c.column.toLowerCase()));
-    if (matchedCat) setSelectedCatCol(matchedCat.column);
-
-    const matchedCols = schema.columns.filter((c) =>
-      lower.includes(c.name.toLowerCase())
-    );
-    if (matchedCols.length >= 2) {
-      setCompareVarA(matchedCols[0].name);
-      setCompareVarB(matchedCols[1].name);
-    } else if (matchedCols.length === 1) {
-      if (schema.numerical_columns.includes(matchedCols[0].name)) {
-        setCompareVarA(matchedCols[0].name);
-      } else {
-        setCompareVarB(matchedCols[0].name);
-      }
-    }
-  };
-
   return (
     <div className="space-y-6">
-      {/* Quick Suggested Question Chips (Phase 10) */}
-      {insight_discovery.suggested_questions.length > 0 && (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-white">
-            <Sparkles className="w-3.5 h-3.5 text-cyan-300" />
-            <span>Suggested Analytical Questions</span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {insight_discovery.suggested_questions.map((q) => (
-              <button
-                key={q}
-                type="button"
-                onClick={() => handleQuestionClick(q)}
-                className="text-left text-xs px-3 py-1.5 rounded-lg bg-slate-950/70 border border-slate-800 hover:border-cyan-500/50 hover:bg-slate-900 text-slate-300 hover:text-white transition-colors"
-              >
-                {q} &rarr;
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      <InteractiveExplorer data={data} drilldown={drilldown} onResultChange={onExplorationResultChange} />
+
+      <p className="rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-[11px] text-slate-400">
+        The existing distributions, correlation matrix, and analysis charts below summarize the full dataset. Filters above recalculate only the interactive result and its evidence.
+      </p>
 
       {/* Interactive Two-Variable Comparison Explorer (Phase 10) */}
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 space-y-4">

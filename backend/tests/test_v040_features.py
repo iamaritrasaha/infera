@@ -17,7 +17,7 @@ def test_health_check_v040():
     data = response.json()
     assert data["status"] == "ok"
     assert data["project"] == "Infera"
-    assert data["version"] == "0.4.0"
+    assert data["version"] == "0.5.0"
     assert data["engine_status"] == "ready"
     assert "timestamp" in data
     assert "X-Request-ID" in response.headers
@@ -30,7 +30,7 @@ def test_diagnostic_endpoint_safe_telemetry():
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "ok"
-    assert data["version"] == "0.4.0"
+    assert data["version"] == "0.5.0"
     assert data["uptime_seconds"] >= 0.0
     assert "python_version" in data
     assert data["max_concurrent_analyses"] == 1

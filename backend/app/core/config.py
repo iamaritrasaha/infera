@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     )
 
     PROJECT_NAME: str = "Infera"
-    VERSION: str = "0.4.0"
+    VERSION: str = "0.5.0"
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     DEBUG: bool = False

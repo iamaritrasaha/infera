@@ -8,6 +8,21 @@ const target = z.object({ column: s, suggested_type: s });
 const column = z.object({ name: s, dtype: s.optional(), original_dtype: s.optional(), inferred_type: z.enum(["numerical", "categorical", "datetime", "text", "boolean"]), null_count: n, null_percentage: n, unique_count: n, sample_values: z.array(scalar) }).transform(c => ({ ...c, dtype: c.dtype ?? c.original_dtype ?? "unknown" }));
 export const samplesSchema = z.array(z.object({ id: s, name: s, description: s, row_count: n, column_count: n, recommended_target: s, suggested_problem_type: s }));
 export const uploadSchema = z.object({ dataset_id: s, dataset_name: s, row_count: n, column_count: n, memory_formatted: s, health_score: n, columns: z.array(column), potential_targets: z.array(target), recommended_target: s.nullable().optional(), preview_rows: z.array(z.record(s, scalar)) });
+const periodRow = z.object({ period: s, timestamp: s, value: n, sample_size: n });
+const explorationFilter = z.object({
+  column: s,
+  kind: z.enum(["category", "number", "date"]),
+  values: z.array(s).optional(),
+  minimum: n.nullable().optional(),
+  maximum: n.nullable().optional(),
+  start: s.nullable().optional(),
+  end: s.nullable().optional(),
+});
+export const explorationOptionsSchema = z.object({
+  column: s, kind: z.enum(["category", "number", "date"]), values: z.array(s),
+  minimum: n.nullable(), maximum: n.nullable(), start: s.nullable(), end: s.nullable(), truncated: z.boolean(),
+  observation_count: n.nullable().optional(), span_days: n.nullable().optional(), median_interval_days: n.nullable().optional(),
+});
 const importance = z.object({ feature: s, importance: n, signed_coefficient: n.optional() });
 const modelBase = { model_name: s, display_name: s, is_best_model: z.boolean(), feature_importances: z.array(importance) };
 const regression = z.object({ ...modelBase, r2_test: n, mae_test: n, mse_test: n, rmse_test: n, cv_r2_mean: n.nullable(), cv_r2_std: n.nullable(), predictions_vs_actual: z.array(z.object({ actual: n, predicted: n })), residuals: z.array(z.object({ predicted: n, residual: n })) });
@@ -20,6 +35,18 @@ const insightChart = z.object({
   x_label: s,
   y_label: s,
   points: z.array(z.object({ x: z.union([s, n]), y: n, detail: s.nullable().optional() })),
+});
+export const explorationSchema = z.object({
+  mode: z.enum(["group", "trend", "relationship"]), status: z.enum(["ready", "empty"]),
+  dataset_rows: n, filtered_rows: n, usable_rows: n,
+  metric_column: s.nullable(), group_column: s.nullable(), time_column: s.nullable(), compare_column: s.nullable(),
+  aggregation: s, frequency: s.nullable(), filters: z.array(explorationFilter), chart: insightChart.nullable(),
+  groups: z.array(z.object({ group: s, value: n, sample_size: n })), periods: z.array(periodRow),
+  first_period: periodRow.nullable(), last_period: periodRow.nullable(), absolute_change: n.nullable(),
+  percentage_change: n.nullable(), period_over_period_change: n.nullable(), highest_period: periodRow.nullable(),
+  lowest_period: periodRow.nullable(), variability: n.nullable(), missing_periods: n,
+  unusual_changes: z.array(z.object({ period: s, change: n, robust_score: n })),
+  pearson_r: n.nullable(), spearman_rho: n.nullable(), valid_pairs: n, interpretation: s, limitations: z.array(s),
 });
 const keyFinding = z.object({
   id: s,

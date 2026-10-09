@@ -365,6 +365,92 @@ export interface InsightDiscovery {
   suggested_questions: string[];
 }
 
+export type ExploreMode = "group" | "trend" | "relationship";
+export type ExploreAggregation = "mean" | "median" | "count" | "sum" | "min" | "max";
+export type TrendFrequency = "D" | "W" | "M" | "Q" | "Y";
+
+export interface ExplorationFilter {
+  column: string;
+  kind: "category" | "number" | "date";
+  values?: string[];
+  minimum?: number | null;
+  maximum?: number | null;
+  start?: string | null;
+  end?: string | null;
+}
+
+export interface ExploreRequest {
+  dataset_id: string;
+  mode: ExploreMode;
+  metric_column?: string | null;
+  group_column?: string | null;
+  time_column?: string | null;
+  compare_column?: string | null;
+  aggregation?: ExploreAggregation;
+  frequency?: TrendFrequency;
+  filters?: ExplorationFilter[];
+}
+
+export interface ExplorationOptions {
+  column: string;
+  kind: "category" | "number" | "date";
+  values: string[];
+  minimum: number | null;
+  maximum: number | null;
+  start: string | null;
+  end: string | null;
+  truncated: boolean;
+  observation_count?: number | null;
+  span_days?: number | null;
+  median_interval_days?: number | null;
+}
+
+export interface ExplorationGroup {
+  group: string;
+  value: number;
+  sample_size: number;
+}
+
+export interface ExplorationPeriod {
+  period: string;
+  timestamp: string;
+  value: number;
+  sample_size: number;
+}
+
+export interface ExplorationResponse {
+  mode: ExploreMode;
+  status: "ready" | "empty";
+  dataset_rows: number;
+  filtered_rows: number;
+  usable_rows: number;
+  metric_column: string | null;
+  group_column: string | null;
+  time_column: string | null;
+  compare_column: string | null;
+  aggregation: string;
+  frequency: string | null;
+  filters: ExplorationFilter[];
+  chart: InsightChartData | null;
+  groups: ExplorationGroup[];
+  periods: ExplorationPeriod[];
+  first_period: ExplorationPeriod | null;
+  last_period: ExplorationPeriod | null;
+  absolute_change: number | null;
+  percentage_change: number | null;
+  period_over_period_change: number | null;
+  highest_period: ExplorationPeriod | null;
+  lowest_period: ExplorationPeriod | null;
+  variability: number | null;
+  missing_periods: number;
+  unusual_changes: { period: string; change: number; robust_score: number }[];
+  pearson_r: number | null;
+  spearman_rho: number | null;
+  valid_pairs: number;
+  interpretation: string;
+  limitations: string[];
+}
+
 export interface AnalysisResponse {
   dataset_id: string;
   dataset_name: string;
