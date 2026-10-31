@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: infera-backend
+    runtime: python
+    region: oregon
+    plan: free
+    autoDeployTrigger: commit
+    buildFilter:
+      paths:
+        - backend/**
+        - render.yaml
+      ignoredPaths: []
+    buildCommand: "cd backend && pip install -r requirements.txt && pip install --no-deps ."
+    startCommand: "cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1"
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3
+      - key: MAX_UPLOAD_SIZE_BYTES
+        value: "15728640"
+      - key: MAX_ROW_COUNT
+        value: "50000"
+      - key: CORS_ORIGINS
+        value: '["https://infera-omega.vercel.app"]'
+      - key: MAX_COLUMN_COUNT
+        value: "100"
+      - key: MAX_CONCURRENT_ANALYSES
+        value: "1"
+      - key: OMP_NUM_THREADS
+        value: "1"
+      - key: OPENBLAS_NUM_THREADS
+        value: "1"
+      - key: MKL_NUM_THREADS
+        value: "1"
+      - key: MAX_MODEL_ROWS
+        value: "5000"
+      - key: MAX_CLUSTER_ROWS
+        value: "1500"

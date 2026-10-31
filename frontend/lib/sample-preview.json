@@ -1,0 +1,85 @@
+{
+  "source": "sample_data/housing.csv",
+  "rows": 250,
+  "columns": 11,
+  "health": 97,
+  "missing": 0.07,
+  "duplicates": 0,
+  "numerical": 9,
+  "mean": 765882.8,
+  "median": 764550.0,
+  "histogram": [
+    {
+      "bin_start": 307000.0,
+      "bin_end": 405050.0,
+      "count": 18,
+      "label": "307000 - 405050"
+    },
+    {
+      "bin_start": 405050.0,
+      "bin_end": 503100.0,
+      "count": 32,
+      "label": "405050 - 503100"
+    },
+    {
+      "bin_start": 503100.0,
+      "bin_end": 601150.0,
+      "count": 35,
+      "label": "503100 - 601150"
+    },
+    {
+      "bin_start": 601150.0,
+      "bin_end": 699200.0,
+      "count": 21,
+      "label": "601150 - 699200"
+    },
+    {
+      "bin_start": 699200.0,
+      "bin_end": 797250.0,
+      "count": 29,
+      "label": "699200 - 797250"
+    },
+    {
+      "bin_start": 797250.0,
+      "bin_end": 895300.0,
+      "count": 30,
+      "label": "797250 - 895300"
+    },
+    {
+      "bin_start": 895300.0,
+      "bin_end": 993350.0,
+      "count": 36,
+      "label": "895300 - 993350"
+    },
+    {
+      "bin_start": 993350.0,
+      "bin_end": 1091400.0,
+      "count": 21,
+      "label": "993350 - 1.0914e+06"
+    },
+    {
+      "bin_start": 1091400.0,
+      "bin_end": 1189450.0,
+      "count": 13,
+      "label": "1.0914e+06 - 1.18945e+06"
+    },
+    {
+      "bin_start": 1189450.0,
+      "bin_end": 1287500.0,
+      "count": 11,
+      "label": "1.18945e+06 - 1.2875e+06"
+    },
+    {
+      "bin_start": 1287500.0,
+      "bin_end": 1385550.0,
+      "count": 1,
+      "label": "1.2875e+06 - 1.38555e+06"
+    },
+    {
+      "bin_start": 1385550.0,
+      "bin_end": 1483600.0,
+      "count": 3,
+      "label": "1.38555e+06 - 1.4836e+06"
+    }
+  ]
+}

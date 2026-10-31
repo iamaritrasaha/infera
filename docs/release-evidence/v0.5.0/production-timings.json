@@ -1,0 +1,7 @@
+{
+  "uploadLatencyMs": 725,
+  "analysisLatencyMs": 1412,
+  "groupLatencyMs": 683,
+  "filterLatencyMs": 674,
+  "trendLatencyMs": 748
+}
