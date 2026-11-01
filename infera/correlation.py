@@ -57,9 +57,7 @@ def classify_correlation(r: float) -> tuple[str, str]:
     return strength, direction
 
 
-def explain_correlation(
-    feature_a: str, feature_b: str, r: float, p_value: float
-) -> str:
+def explain_correlation(feature_a: str, feature_b: str, r: float, p_value: float) -> str:
     """Produce a clear, plain-English summary of a relationship between two variables."""
     strength, direction = classify_correlation(r)
 
@@ -80,9 +78,7 @@ def explain_correlation(
     )
 
 
-def compute_correlations(
-    df: pd.DataFrame, numerical_columns: list[str]
-) -> CorrelationResult:
+def compute_correlations(df: pd.DataFrame, numerical_columns: list[str]) -> CorrelationResult:
     """Compute Pearson and Spearman correlation matrices and rank the strongest pairs.
 
     Args:
@@ -93,9 +89,7 @@ def compute_correlations(
         CorrelationResult with matrices and top positive/negative pairs.
     """
     # Filter to columns that actually exist and have variance (not constant)
-    valid_cols = [
-        c for c in numerical_columns if c in df.columns and df[c].dropna().nunique() > 1
-    ]
+    valid_cols = [c for c in numerical_columns if c in df.columns and df[c].dropna().nunique() > 1]
 
     if len(valid_cols) < 2:
         return CorrelationResult(
@@ -132,7 +126,11 @@ def compute_correlations(
 
             # Drop rows where either column is NaN
             pair_data = subset_df[[col_a, col_b]].dropna()
-            if len(pair_data) < 3:
+            if (
+                len(pair_data) < 3
+                or pair_data[col_a].nunique() < 2
+                or pair_data[col_b].nunique() < 2
+            ):
                 continue
 
             # Pearson r and p-value

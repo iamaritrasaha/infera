@@ -4,7 +4,10 @@ This module reads uploaded datasets (primarily CSV files) into pandas DataFrames
 validates that the data is usable, and profiles columns and data quality.
 """
 
+import csv
 import io
+import json
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +29,8 @@ from infera.models import (
 # ---------------------------------------------------------------------------
 # 15 Megabytes maximum upload size to protect memory on learner laptops
 MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024
+MAX_ROWS = 5000
+MAX_COLUMNS = 100
 
 # Minimum number of rows required for statistical significance
 MIN_ROWS_FOR_ANALYSIS = 3
@@ -65,10 +70,41 @@ def load_csv(source: bytes | str | Path) -> pd.DataFrame:
             raise ValueError(f"File not found: {path}")
         if path.stat().st_size == 0:
             raise ValueError("The file is empty.")
+        if path.stat().st_size > MAX_FILE_SIZE_BYTES:
+            raise ValueError("File exceeds the 15 MB limit.")
         buffer = path
 
     try:
+        raw = source if isinstance(source, bytes) else path.read_bytes()
+        text = raw.decode("utf-8-sig")
+        if "\x00" in text:
+            raise ValueError("CSV contains binary NUL characters.")
+        records = csv.reader(io.StringIO(text), strict=True)
+        header = next(records)
+        names = [name.strip() for name in header]
+        if any(not name or len(name) > 100 for name in names) or len(set(names)) != len(names):
+            raise ValueError(
+                "Column names must be nonempty, unique after trimming, and at most 100 characters."
+            )
+        if len(header) > MAX_COLUMNS:
+            raise ValueError(f"At most {MAX_COLUMNS} columns are supported.")
+        row_count = 0
+        for row in records:
+            if not row:
+                continue
+            if len(row) != len(header):
+                raise ValueError("Every CSV row must have the same number of fields as the header.")
+            row_count += 1
+            if row_count > MAX_ROWS:
+                raise ValueError(f"At most {MAX_ROWS} rows are supported.")
         df = pd.read_csv(buffer)
+        numeric = df.select_dtypes(include="number")
+        if np.isinf(numeric.to_numpy(dtype=float)).any():
+            raise ValueError(
+                "Infinite numeric values are not supported; use empty cells for missing data."
+            )
+        if numeric.abs().gt(1e50).any().any():
+            raise ValueError("Numeric magnitudes above 1e50 are not supported.")
     except Exception as err:
         raise ValueError(f"Could not parse CSV file: {err}") from err
 
@@ -84,6 +120,48 @@ def load_csv(source: bytes | str | Path) -> pd.DataFrame:
     df.columns = [str(col).strip() for col in df.columns]
 
     return df
+
+
+def preview_records(df: pd.DataFrame) -> list[dict[str, Any]]:
+    """Convert missing values to JSON null rather than nonstandard NaN."""
+    return json.loads(df.head(10).to_json(orient="records", date_format="iso") or "[]")
+
+
+def load_dataset(content: bytes, filename: str) -> pd.DataFrame:
+    """Read advertised formats, then reuse the same bounded CSV validation."""
+    suffix = Path(filename).suffix.lower()
+    if suffix == ".csv":
+        return load_csv(content)
+    if len(content) > MAX_FILE_SIZE_BYTES:
+        raise ValueError("File exceeds the 15 MB limit.")
+    try:
+        if suffix == ".xlsx":
+            with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                if sum(item.file_size for item in archive.infolist()) > 50 * 1024 * 1024:
+                    raise ValueError("Expanded workbook exceeds 50 MB.")
+            df = pd.read_excel(io.BytesIO(content), nrows=MAX_ROWS + 1)
+        elif suffix == ".json":
+            df = pd.read_json(io.BytesIO(content))
+        elif suffix == ".parquet":
+            import pyarrow.parquet as pq
+
+            table = pq.ParquetFile(io.BytesIO(content))
+            if table.metadata.num_rows > MAX_ROWS or len(table.schema.names) > MAX_COLUMNS:
+                raise ValueError("Parquet exceeds row or column limits.")
+            if (
+                sum(
+                    table.metadata.row_group(i).total_byte_size
+                    for i in range(table.metadata.num_row_groups)
+                )
+                > 50 * 1024 * 1024
+            ):
+                raise ValueError("Expanded Parquet exceeds 50 MB.")
+            df = table.read().to_pandas()
+        else:
+            raise ValueError("Supported formats: CSV, XLSX, JSON, Parquet.")
+        return load_csv(df.to_csv(index=False).encode("utf-8"))
+    except Exception as err:
+        raise ValueError(f"Could not read dataset: {err}") from err
 
 
 # ---------------------------------------------------------------------------
@@ -113,7 +191,10 @@ def infer_column_type(series: pd.Series) -> str:
     if len(non_nulls) > 0:
         # Check if values look like dates (e.g. 2024-01-01)
         first_few = non_nulls.head(5).astype(str)
-        if first_few.str.match(r"^\d{4}[-/]\d{2}[-/]\d{2}").all():
+        if (
+            first_few.str.match(r"^\d{4}[-/]\d{2}[-/]\d{2}").all()
+            and pd.to_datetime(non_nulls, errors="coerce", format="mixed").notna().all()
+        ):
             return "datetime"
 
     # Distinguish categorical (few unique values) from free-form text
@@ -136,9 +217,7 @@ def inspect_columns(df: pd.DataFrame) -> list[ColumnSummary]:
     for col_name in df.columns:
         series = df[col_name]
         null_count = int(series.isna().sum())
-        null_percentage = (
-            round((null_count / total_rows) * 100.0, 2) if total_rows > 0 else 0.0
-        )
+        null_percentage = round((null_count / total_rows) * 100.0, 2) if total_rows > 0 else 0.0
         unique_count = int(series.nunique())
         inferred = infer_column_type(series)
 
@@ -191,15 +270,10 @@ def detect_potential_targets(df: pd.DataFrame) -> list[PotentialTarget]:
         series = df[col]
 
         # Skip columns that appear to be row identifiers or have only 1 value
-        if (
-            col_lower in ["id", "index", "row_id", "uuid", "guid"]
-            or series.nunique() <= 1
-        ):
+        if col_lower in ["id", "index", "row_id", "uuid", "guid"] or series.nunique() <= 1:
             continue
 
-        is_keyword_match = any(
-            keyword in col_lower for keyword in common_target_keywords
-        )
+        is_keyword_match = any(keyword in col_lower for keyword in common_target_keywords)
 
         if pd.api.types.is_numeric_dtype(series):
             # Numeric column: candidate for regression (or binary classification if only 0 and 1)
@@ -208,15 +282,11 @@ def detect_potential_targets(df: pd.DataFrame) -> list[PotentialTarget]:
                     PotentialTarget(column=col, suggested_type="binary_classification")
                 )
             elif is_keyword_match or series.nunique() > 10:
-                candidates.append(
-                    PotentialTarget(column=col, suggested_type="regression")
-                )
+                candidates.append(PotentialTarget(column=col, suggested_type="regression"))
         elif series.nunique() <= 10 and is_keyword_match:
             # Low cardinality text/category: candidate for classification
             suggested = (
-                "binary_classification"
-                if series.nunique() == 2
-                else "multiclass_classification"
+                "binary_classification" if series.nunique() == 2 else "multiclass_classification"
             )
             candidates.append(PotentialTarget(column=col, suggested_type=suggested))
 
@@ -255,9 +325,7 @@ def compute_quality_profile(df: pd.DataFrame) -> DataQuality:
     total_cells = df.size
     total_missing_cells = int(df.isna().sum().sum())
     overall_missing_pct = (
-        round((total_missing_cells / total_cells) * 100.0, 2)
-        if total_cells > 0
-        else 0.0
+        round((total_missing_cells / total_cells) * 100.0, 2) if total_cells > 0 else 0.0
     )
 
     complete_rows = int((~df.isna().any(axis=1)).sum())
@@ -274,9 +342,7 @@ def compute_quality_profile(df: pd.DataFrame) -> DataQuality:
         status = (
             "clean"
             if m_count == 0
-            else (
-                "minor" if m_pct < 5.0 else ("moderate" if m_pct < 20.0 else "severe")
-            )
+            else ("minor" if m_pct < 5.0 else ("moderate" if m_pct < 20.0 else "severe"))
         )
         col_missing_profiles.append(
             {
@@ -313,13 +379,9 @@ def compute_quality_profile(df: pd.DataFrame) -> DataQuality:
 
     # Duplicates profile
     duplicate_count = int(df.duplicated().sum())
-    duplicate_pct = (
-        round((duplicate_count / total_rows) * 100.0, 2) if total_rows > 0 else 0.0
-    )
+    duplicate_pct = round((duplicate_count / total_rows) * 100.0, 2) if total_rows > 0 else 0.0
     dup_status = (
-        "clean"
-        if duplicate_count == 0
-        else ("moderate" if duplicate_pct < 5.0 else "severe")
+        "clean" if duplicate_count == 0 else ("moderate" if duplicate_pct < 5.0 else "severe")
     )
     dup_rec = (
         "No duplicate rows detected."
@@ -351,7 +413,11 @@ def compute_quality_profile(df: pd.DataFrame) -> DataQuality:
     )
 
     # Outliers profile (using standard IQR: values < Q1 - 1.5*IQR or > Q3 + 1.5*IQR)
-    numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+    numeric_cols = [
+        c
+        for c in df.columns
+        if pd.api.types.is_numeric_dtype(df[c]) and not pd.api.types.is_bool_dtype(df[c])
+    ]
     outlier_profiles = []
     total_outliers = 0
     cols_with_outliers = 0
@@ -377,11 +443,7 @@ def compute_quality_profile(df: pd.DataFrame) -> DataQuality:
         severity = (
             "none"
             if outlier_count == 0
-            else (
-                "mild"
-                if outlier_pct < 5.0
-                else ("notable" if outlier_pct < 15.0 else "extreme")
-            )
+            else ("mild" if outlier_pct < 5.0 else ("notable" if outlier_pct < 15.0 else "extreme"))
         )
 
         outlier_profiles.append(
@@ -392,8 +454,17 @@ def compute_quality_profile(df: pd.DataFrame) -> DataQuality:
                 "iqr_outlier_percentage": outlier_pct,
                 "iqr_lower_bound": round(lower_bound, 4),
                 "iqr_upper_bound": round(upper_bound, 4),
-                "zscore_outlier_count": outlier_count,
-                "zscore_outlier_percentage": outlier_pct,
+                "zscore_outlier_count": int(
+                    (((series - series.mean()) / series.std(ddof=0)).abs() > 3).sum()
+                )
+                if series.std(ddof=0) > 0
+                else 0,
+                "zscore_outlier_percentage": round(
+                    float((((series - series.mean()) / series.std(ddof=0)).abs() > 3).mean()) * 100,
+                    2,
+                )
+                if series.std(ddof=0) > 0
+                else 0.0,
                 "severity": severity,
                 "context_note": f"Found {outlier_count} values outside the [{round(lower_bound, 2)}, {round(upper_bound, 2)}] IQR fence.",
             }
@@ -458,20 +529,14 @@ def get_dataset_schema(df: pd.DataFrame) -> dict[str, Any]:
 
     numerical_cols = [c.name for c in columns_info if c.inferred_type == "numerical"]
     categorical_cols = [
-        c.name for c in columns_info if c.inferred_type == "categorical"
+        c.name for c in columns_info if c.inferred_type in {"categorical", "boolean"}
     ]
     datetime_cols = [c.name for c in columns_info if c.inferred_type == "datetime"]
     text_cols = [c.name for c in columns_info if c.inferred_type == "text"]
     constant_cols = [c.name for c in columns_info if c.unique_count <= 1]
-    id_cols = [
-        c.name
-        for c in columns_info
-        if c.name.lower() in ["id", "index", "row_id", "uuid"]
-    ]
+    id_cols = [c.name for c in columns_info if c.name.lower() in ["id", "index", "row_id", "uuid"]]
     high_card_cols = [
-        c.name
-        for c in columns_info
-        if c.inferred_type == "categorical" and c.unique_count > 50
+        c.name for c in columns_info if c.inferred_type == "categorical" and c.unique_count > 50
     ]
 
     potential_targets = detect_potential_targets(df)

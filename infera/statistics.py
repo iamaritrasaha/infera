@@ -21,9 +21,7 @@ from infera.models import (
 DEFAULT_HISTOGRAM_BINS = 10
 
 
-def calculate_numerical_column_stats(
-    series: pd.Series, column_name: str
-) -> NumericalColumnStats:
+def calculate_numerical_column_stats(series: pd.Series, column_name: str) -> NumericalColumnStats:
     """Calculate descriptive statistics and histogram bins for one numerical column.
 
     Mathematical steps:
@@ -47,11 +45,11 @@ def calculate_numerical_column_stats(
             median=None,
             std=None,
             variance=None,
-            min=0.0,
-            max=0.0,
-            q25=0.0,
-            q75=0.0,
-            iqr=0.0,
+            min=None,
+            max=None,
+            q25=None,
+            q75=None,
+            iqr=None,
             skewness=None,
             skewness_interpretation="No non-null data available",
             kurtosis=None,
@@ -212,19 +210,13 @@ def compute_descriptive_statistics(
 ) -> DescriptiveStatistics:
     """Compute complete descriptive statistics across all columns in the DataFrame."""
     if numerical_columns is None:
-        numerical_columns = [
-            c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])
-        ]
+        numerical_columns = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
 
     if categorical_columns is None:
         categorical_columns = [c for c in df.columns if c not in numerical_columns]
 
-    num_stats = [
-        calculate_numerical_column_stats(df[col], col) for col in numerical_columns
-    ]
+    num_stats = [calculate_numerical_column_stats(df[col], col) for col in numerical_columns]
 
-    cat_stats = [
-        calculate_categorical_column_stats(df[col], col) for col in categorical_columns
-    ]
+    cat_stats = [calculate_categorical_column_stats(df[col], col) for col in categorical_columns]
 
     return DescriptiveStatistics(numerical=num_stats, categorical=cat_stats)

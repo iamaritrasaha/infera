@@ -35,11 +35,28 @@ def generate_housing(n=250):
 
         # Realistic price generation based on features
         base = 80000
-        n_mult = {"Downtown": 1.45, "Riverside": 1.35, "Uptown": 1.25, "Suburbs": 1.0, "Hillside": 1.15}[neighborhood]
+        n_mult = {
+            "Downtown": 1.45,
+            "Riverside": 1.35,
+            "Uptown": 1.25,
+            "Suburbs": 1.0,
+            "Hillside": 1.15,
+        }[neighborhood]
         cond_add = {"Poor": -25000, "Fair": 0, "Good": 35000, "Excellent": 75000}[condition]
         wf_mult = 1.35 if waterfront else 1.0
 
-        price = (base + (sqft * 165) + (bedrooms * 12000) + (bathrooms * 15000) + (lot_size * 4) + cond_add) * n_mult * wf_mult
+        price = (
+            (
+                base
+                + (sqft * 165)
+                + (bedrooms * 12000)
+                + (bathrooms * 15000)
+                + (lot_size * 4)
+                + cond_add
+            )
+            * n_mult
+            * wf_mult
+        )
         # Add realistic noise
         price += random.gauss(0, 18000)
         price = max(65000, round(price, -2))
@@ -48,19 +65,21 @@ def generate_housing(n=250):
         bedrooms_val = "" if i == 14 else bedrooms
         sqft_val = "" if i == 42 else sqft
 
-        rows.append({
-            "id": 1000 + i,
-            "price": price,
-            "bedrooms": bedrooms_val,
-            "bathrooms": bathrooms,
-            "sqft_living": sqft_val,
-            "lot_size": lot_size,
-            "floors": floors,
-            "waterfront": waterfront,
-            "year_built": year_built,
-            "neighborhood": neighborhood,
-            "condition": condition,
-        })
+        rows.append(
+            {
+                "id": 1000 + i,
+                "price": price,
+                "bedrooms": bedrooms_val,
+                "bathrooms": bathrooms,
+                "sqft_living": sqft_val,
+                "lot_size": lot_size,
+                "floors": floors,
+                "waterfront": waterfront,
+                "year_built": year_built,
+                "neighborhood": neighborhood,
+                "condition": condition,
+            }
+        )
 
     with open(SAMPLE_DIR / "housing.csv", "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
@@ -114,18 +133,20 @@ def generate_churn(n=300):
         # Occasional missing value
         monthly_val = "" if i == 23 else monthly_charges
 
-        rows.append({
-            "customer_id": f"CUST-{1000 + i}",
-            "tenure_months": tenure,
-            "contract_type": contract,
-            "internet_service": internet,
-            "tech_support": tech_support,
-            "paperless_billing": paperless,
-            "payment_method": payment,
-            "monthly_charges": monthly_val,
-            "total_charges": total_charges,
-            "churned": churned,
-        })
+        rows.append(
+            {
+                "customer_id": f"CUST-{1000 + i}",
+                "tenure_months": tenure,
+                "contract_type": contract,
+                "internet_service": internet,
+                "tech_support": tech_support,
+                "paperless_billing": paperless,
+                "payment_method": payment,
+                "monthly_charges": monthly_val,
+                "total_charges": total_charges,
+                "churned": churned,
+            }
+        )
 
     with open(SAMPLE_DIR / "customer_churn.csv", "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
@@ -148,8 +169,16 @@ def generate_student_performance(n=250):
         activities = random.choice(["Yes", "No"])
 
         # Final score
-        parent_bonus = {"High School": 0, "Some College": 3, "Bachelor's": 6, "Master's": 8}[parent_ed]
-        score = (hours_studied * 2.2) + (attendance * 0.35) + (previous_score * 0.42) + parent_bonus + random.gauss(0, 4)
+        parent_bonus = {"High School": 0, "Some College": 3, "Bachelor's": 6, "Master's": 8}[
+            parent_ed
+        ]
+        score = (
+            (hours_studied * 2.2)
+            + (attendance * 0.35)
+            + (previous_score * 0.42)
+            + parent_bonus
+            + random.gauss(0, 4)
+        )
         score = max(35.0, min(100.0, round(score, 1)))
 
         if score < 65:
@@ -159,18 +188,20 @@ def generate_student_performance(n=250):
         else:
             tier = "High"
 
-        rows.append({
-            "student_id": f"STU-{2000 + i}",
-            "hours_studied": hours_studied,
-            "attendance_rate": attendance,
-            "sleep_hours": sleep_hours,
-            "previous_exam_score": previous_score,
-            "parent_education": parent_ed,
-            "school_type": school_type,
-            "extracurricular": activities,
-            "final_score": score,
-            "performance_tier": tier,
-        })
+        rows.append(
+            {
+                "student_id": f"STU-{2000 + i}",
+                "hours_studied": hours_studied,
+                "attendance_rate": attendance,
+                "sleep_hours": sleep_hours,
+                "previous_exam_score": previous_score,
+                "parent_education": parent_ed,
+                "school_type": school_type,
+                "extracurricular": activities,
+                "final_score": score,
+                "performance_tier": tier,
+            }
+        )
 
     with open(SAMPLE_DIR / "student_performance.csv", "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
@@ -187,27 +218,39 @@ def generate_retail_sales(n=200):
         cur_date = start_date + timedelta(days=i * 2)
         store_id = f"STORE-0{random.randint(1, 4)}"
         department = random.choice(departments)
-        is_holiday = 1 if (cur_date.month == 12 and cur_date.day >= 20) or (cur_date.month == 11 and cur_date.day >= 22) else 0
+        is_holiday = (
+            1
+            if (cur_date.month == 12 and cur_date.day >= 20)
+            or (cur_date.month == 11 and cur_date.day >= 22)
+            else 0
+        )
         temperature = round(random.uniform(20.0, 95.0), 1)
         fuel_price = round(random.uniform(2.80, 4.20), 2)
         cpi = round(210.0 + (i * 0.08) + random.uniform(-0.5, 0.5), 2)
         unemployment = round(5.2 - (i * 0.005) + random.uniform(-0.2, 0.2), 2)
 
-        base_sales = {"Electronics": 15000, "Apparel": 8500, "Groceries": 12000, "Home & Garden": 6500}[department]
+        base_sales = {
+            "Electronics": 15000,
+            "Apparel": 8500,
+            "Groceries": 12000,
+            "Home & Garden": 6500,
+        }[department]
         holiday_boost = 1.45 if is_holiday else 1.0
         weekly_sales = round((base_sales + (i * 12) + random.gauss(0, 1100)) * holiday_boost, 2)
 
-        rows.append({
-            "date": cur_date.isoformat(),
-            "store_id": store_id,
-            "department": department,
-            "weekly_sales": weekly_sales,
-            "is_holiday": is_holiday,
-            "temperature": temperature,
-            "fuel_price": fuel_price,
-            "cpi": cpi,
-            "unemployment_rate": unemployment,
-        })
+        rows.append(
+            {
+                "date": cur_date.isoformat(),
+                "store_id": store_id,
+                "department": department,
+                "weekly_sales": weekly_sales,
+                "is_holiday": is_holiday,
+                "temperature": temperature,
+                "fuel_price": fuel_price,
+                "cpi": cpi,
+                "unemployment_rate": unemployment,
+            }
+        )
 
     with open(SAMPLE_DIR / "retail_sales.csv", "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
