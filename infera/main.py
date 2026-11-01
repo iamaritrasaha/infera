@@ -1,14 +1,12 @@
 """Infera — FastAPI Application Entry Point.
 
-This file starts the web service and exposes straightforward HTTP endpoints for:
-1. Health checks (/health)
-2. Loading sample datasets (/api/samples)
-3. Uploading user CSV files (/api/upload)
-4. Running data science analysis (/api/analyze)
-5. Viewing and exporting results (/api/results)
-
-A beginner can read this file from top to bottom to see how web requests are received,
-handed to pure Python functions, and converted into JSON responses.
+This module exposes the local HTTP endpoints for Infera:
+- Health & Diagnostics (/health, /diagnostic)
+- Sample Datasets (/api/samples)
+- Dataset Upload (/api/upload)
+- Analysis Pipeline (/api/analyze)
+- Interactive Exploration (/api/explore)
+- Results & Report Export (/api/results)
 """
 
 import logging
@@ -56,10 +54,9 @@ from infera.models import (
 app = FastAPI(
     title="Infera",
     version="0.5.0",
-    description="A readable, beginner-friendly Python data science analysis engine.",
+    description="A readable Python data science analysis engine.",
 )
 
-# Allow the frontend (running on localhost:3000) to communicate with this API
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://127.0.0.1:3100"],
@@ -69,26 +66,23 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
-# In-memory storage for active sessions:
-# DATASETS maps dataset_id -> (pandas DataFrame, human-readable dataset name)
 DATASETS: dict[str, tuple[pd.DataFrame, str]] = {}
-
-# RESULTS maps dataset_id -> computed analysis payload dictionary
 RESULTS: dict[str, dict[str, Any]] = {}
 OWNERS: dict[str, str | None] = {}
 
-# Single-user local limits: no authentication or public multi-user support.
 ANALYSIS_LOCK = threading.Lock()
 STORAGE_LOCK = threading.Lock()
 MAX_DATASETS = 8
+START_TIME = time.time()
+SAMPLE_DATA_DIR = Path(__file__).resolve().parent.parent / "sample_data"
 
 
 def store_dataset(dataset_id: str, df: pd.DataFrame, name: str, owner: str | None = None) -> None:
-    """Keep a bounded FIFO cache; eviction also removes the corresponding report."""
+    """Store dataset in bounded FIFO cache; evict oldest when limit is reached."""
     with STORAGE_LOCK:
         while len(DATASETS) >= MAX_DATASETS:
             oldest = next(iter(DATASETS))
-            DATASETS.pop(oldest)
+            DATASETS.pop(oldest, None)
             RESULTS.pop(oldest, None)
             OWNERS.pop(oldest, None)
         DATASETS[dataset_id] = (df, name)
@@ -96,78 +90,80 @@ def store_dataset(dataset_id: str, df: pd.DataFrame, name: str, owner: str | Non
 
 
 def check_owner(dataset_id: str, owner: str | None) -> None:
-    """Honor the browser's existing ownership header without a session framework."""
+    """Validate that the requesting session owns the dataset."""
     if OWNERS.get(dataset_id) != owner:
         raise HTTPException(404, "Dataset unavailable in this browser session.")
 
 
+def _build_upload_response(
+    dataset_id: str,
+    dataset_name: str,
+    df: pd.DataFrame,
+    recommended_target: str | None = None,
+) -> UploadResponse:
+    """Create an UploadResponse with schema metadata and JSON-safe preview rows."""
+    schema_info = get_dataset_schema(df)
+    health = calculate_health_score(df)
+    potential_targets = schema_info["potential_targets"]
+    recommended = recommended_target or (
+        potential_targets[0]["column"] if potential_targets else None
+    )
+
+    return UploadResponse(
+        dataset_id=dataset_id,
+        dataset_name=dataset_name,
+        row_count=len(df),
+        column_count=len(df.columns),
+        memory_formatted=schema_info["memory_formatted"],
+        health_score=health,
+        columns=inspect_columns(df),
+        potential_targets=potential_targets,
+        recommended_target=recommended,
+        preview_rows=preview_records(df),
+    )
+
+
 @app.middleware("http")
 async def local_access_only(request, call_next):
-    """Reject non-loopback clients and browser origins, including DNS rebinding."""
+    """Reject non-loopback hosts, clients, and foreign browser origins."""
     host = request.url.hostname
     client = request.client.host if request.client else ""
 
-    def loopback(value):
+    def is_loopback(val: str | None) -> bool:
+        if not val:
+            return False
         try:
-            return ip_address(value).is_loopback
+            return ip_address(val).is_loopback
         except ValueError:
-            return value in {"localhost", "testclient", "testserver"}
+            return val in {"localhost", "testclient", "testserver"}
 
-    origin = request.headers.get("origin")
-    allowed = {
+    allowed_origins = {
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:3100",
         "http://localhost:8000",
         "http://127.0.0.1:8000",
     }
-    if not loopback(host) or not loopback(client) or (origin and origin not in allowed):
+    origin = request.headers.get("origin")
+    if (
+        not is_loopback(host)
+        or not is_loopback(client)
+        or (origin and origin not in allowed_origins)
+    ):
         return JSONResponse(
             {"detail": "Infera supports local single-user access only."}, status_code=403
         )
     return await call_next(request)
 
 
-@app.post("/api/explore/options", response_model=ExplorationOptionsResponse)
-def exploration_options(
-    request: ExplorationOptionsRequest, x_infera_session: str | None = Header(None)
-):
-    check_owner(request.dataset_id, x_infera_session)
-    entry = DATASETS.get(request.dataset_id)
-    if not entry:
-        raise HTTPException(404, "Dataset unavailable. Please re-upload.")
-    try:
-        return ExplorationOptionsResponse(**column_options(entry[0], request.column))
-    except ValueError as err:
-        raise HTTPException(400, str(err)) from err
-
-
-@app.post("/api/explore", response_model=ExplorationResponse)
-def explore(request: ExploreRequest, x_infera_session: str | None = Header(None)):
-    check_owner(request.dataset_id, x_infera_session)
-    entry = DATASETS.get(request.dataset_id)
-    if not entry:
-        raise HTTPException(404, "Dataset unavailable. Please re-upload.")
-    try:
-        return ExplorationResponse(**explore_dataframe(entry[0], request))
-    except ValueError as err:
-        raise HTTPException(400, str(err)) from err
-
-
-# Locate sample datasets folder relative to project root
-SAMPLE_DATA_DIR = Path(__file__).resolve().parent.parent / "sample_data"
-START_TIME = time.time()
-
-
 # ---------------------------------------------------------------------------
-# 1. Health & Diagnostic Endpoints
+# 1. Health & Diagnostics
 # ---------------------------------------------------------------------------
 
 
 @app.get("/health", response_model=HealthResponse)
 @app.get("/api/health", response_model=HealthResponse)
 def health_check() -> HealthResponse:
-    """Verify that the Infera server is up and responsive."""
     return HealthResponse(
         status="ok",
         project="Infera",
@@ -180,24 +176,20 @@ def health_check() -> HealthResponse:
 @app.get("/diagnostic", response_model=DiagnosticResponse)
 @app.get("/api/diagnostic", response_model=DiagnosticResponse)
 def diagnostic() -> DiagnosticResponse:
-    """System diagnostics for local debugging without OS-specific dependencies."""
-    uptime = time.time() - START_TIME
     return DiagnosticResponse(
         status="ok",
         project="Infera",
         version="0.5.0",
-        uptime_seconds=round(uptime, 1),
+        uptime_seconds=round(time.time() - START_TIME, 1),
         python_version=sys.version.split()[0],
         environment="development",
     )
 
 
 # ---------------------------------------------------------------------------
-# 2. Sample Datasets Catalog & Loader
+# 2. Sample Datasets
 # ---------------------------------------------------------------------------
 
-
-# Pre-configured catalog of educational datasets included with the project
 SAMPLE_CATALOG: list[SampleDataset] = [
     SampleDataset(
         id="housing",
@@ -240,7 +232,6 @@ SAMPLE_CATALOG: list[SampleDataset] = [
 
 @app.get("/api/samples", response_model=list[SampleDataset])
 def list_sample_datasets() -> list[SampleDataset]:
-    """List available sample datasets included in sample_data/."""
     for item in SAMPLE_CATALOG:
         df = load_csv(SAMPLE_DATA_DIR / f"{item.id}.csv")
         item.row_count, item.column_count = df.shape
@@ -251,44 +242,24 @@ def list_sample_datasets() -> list[SampleDataset]:
 def load_sample_dataset(
     sample_id: str, x_infera_session: str | None = Header(None)
 ) -> UploadResponse:
-    """Load one of the bundled sample CSV files into the active session."""
+    catalog_item = next((s for s in SAMPLE_CATALOG if s.id == sample_id), None)
     csv_file = SAMPLE_DATA_DIR / f"{sample_id}.csv"
-    if not csv_file.exists():
+    if not catalog_item or not csv_file.exists():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Sample dataset '{sample_id}' not found at {csv_file}.",
+            detail=f"Sample dataset '{sample_id}' not found.",
         )
-
-    # Only catalogued files may be loaded, even if another CSV exists nearby.
-    catalog_item = next((s for s in SAMPLE_CATALOG if s.id == sample_id), None)
-    if catalog_item is None:
-        raise HTTPException(404, "Unknown sample dataset.")
-    display_name = catalog_item.name if catalog_item else sample_id.replace("_", " ").title()
 
     df = load_csv(csv_file)
     dataset_id = str(uuid.uuid4())
-    store_dataset(dataset_id, df, display_name, x_infera_session)
-
-    schema_info = get_dataset_schema(df)
-    health = calculate_health_score(df)
-    recommended = catalog_item.recommended_target if catalog_item else None
-
-    return UploadResponse(
-        dataset_id=dataset_id,
-        dataset_name=display_name,
-        row_count=len(df),
-        column_count=len(df.columns),
-        memory_formatted=schema_info["memory_formatted"],
-        health_score=health,
-        columns=inspect_columns(df),
-        potential_targets=schema_info["potential_targets"],
-        recommended_target=recommended,
-        preview_rows=preview_records(df),
+    store_dataset(dataset_id, df, catalog_item.name, x_infera_session)
+    return _build_upload_response(
+        dataset_id, catalog_item.name, df, catalog_item.recommended_target
     )
 
 
 # ---------------------------------------------------------------------------
-# 3. CSV File Upload
+# 3. Dataset Upload
 # ---------------------------------------------------------------------------
 
 
@@ -296,15 +267,6 @@ def load_sample_dataset(
 async def upload_csv_file(
     file: UploadFile = File(...), x_infera_session: str | None = Header(None)
 ) -> UploadResponse:
-    """Upload a CSV dataset from the user's computer.
-
-    Execution Flow:
-    1. Verify file name and extension (.csv)
-    2. Read file contents and check size limit
-    3. Parse into pandas DataFrame using data_loader.load_csv()
-    4. Profile columns and store DataFrame in memory
-    5. Return UploadResponse previewing columns and health
-    """
     filename = file.filename or "dataset.csv"
     if Path(filename).suffix.lower() not in {".csv", ".xlsx", ".json", ".parquet"}:
         raise HTTPException(
@@ -324,13 +286,12 @@ async def upload_csv_file(
 
     if len(content) == 0:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="The uploaded file is empty.",
+            status_code=status.HTTP_400_BAD_REQUEST, detail="The uploaded file is empty."
         )
 
     if len(content) > MAX_FILE_SIZE_BYTES:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=f"File exceeds maximum upload size of {MAX_FILE_SIZE_BYTES // (1024 * 1024)} MB.",
         )
 
@@ -342,24 +303,7 @@ async def upload_csv_file(
     dataset_name = Path(filename).stem.replace("_", " ")
     dataset_id = str(uuid.uuid4())
     store_dataset(dataset_id, df, dataset_name, x_infera_session)
-
-    schema_info = get_dataset_schema(df)
-    health = calculate_health_score(df)
-    potential_targets = schema_info["potential_targets"]
-    recommended = potential_targets[0]["column"] if potential_targets else None
-
-    return UploadResponse(
-        dataset_id=dataset_id,
-        dataset_name=dataset_name,
-        row_count=len(df),
-        column_count=len(df.columns),
-        memory_formatted=schema_info["memory_formatted"],
-        health_score=health,
-        columns=inspect_columns(df),
-        potential_targets=potential_targets,
-        recommended_target=recommended,
-        preview_rows=preview_records(df),
-    )
+    return _build_upload_response(dataset_id, dataset_name, df)
 
 
 # ---------------------------------------------------------------------------
@@ -371,14 +315,6 @@ async def upload_csv_file(
 def analyze_dataset(
     request: AnalyzeRequest, x_infera_session: str | None = Header(None)
 ) -> AnalysisResponse:
-    """Execute complete analytical and machine learning pipeline on an uploaded dataset.
-
-    Execution Flow:
-    1. Fetch DataFrame from in-memory DATASETS
-    2. Pass to infera.analysis.run_full_analysis()
-    3. Cache result in RESULTS dictionary
-    4. Return full AnalysisResponse
-    """
     check_owner(request.dataset_id, x_infera_session)
     entry = DATASETS.get(request.dataset_id)
     if not entry:
@@ -388,11 +324,11 @@ def analyze_dataset(
         )
 
     df, dataset_name = entry
-
     if not ANALYSIS_LOCK.acquire(blocking=False):
         raise HTTPException(429, "Another analysis is running. Please retry.")
+
     try:
-        analysis_payload = run_full_analysis(
+        payload = run_full_analysis(
             df=df,
             dataset_name=dataset_name,
             dataset_id=request.dataset_id,
@@ -407,20 +343,49 @@ def analyze_dataset(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Analysis failed. See the backend terminal for details.",
         ) from err
-
     finally:
         ANALYSIS_LOCK.release()
 
-    # Cache result for future lookups or report downloads
     with STORAGE_LOCK:
         if request.dataset_id in DATASETS:
-            RESULTS[request.dataset_id] = analysis_payload
+            RESULTS[request.dataset_id] = payload
 
-    return AnalysisResponse(**analysis_payload)
+    return AnalysisResponse(**payload)
 
 
 # ---------------------------------------------------------------------------
-# 5. Retrieve Results and Download Reports
+# 5. Interactive Exploration
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/explore/options", response_model=ExplorationOptionsResponse)
+def exploration_options(
+    request: ExplorationOptionsRequest, x_infera_session: str | None = Header(None)
+):
+    check_owner(request.dataset_id, x_infera_session)
+    entry = DATASETS.get(request.dataset_id)
+    if not entry:
+        raise HTTPException(404, "Dataset unavailable. Please re-upload.")
+    try:
+        return ExplorationOptionsResponse(**column_options(entry[0], request.column))
+    except ValueError as err:
+        raise HTTPException(400, str(err)) from err
+
+
+@app.post("/api/explore", response_model=ExplorationResponse)
+def explore(request: ExploreRequest, x_infera_session: str | None = Header(None)):
+    check_owner(request.dataset_id, x_infera_session)
+    entry = DATASETS.get(request.dataset_id)
+    if not entry:
+        raise HTTPException(404, "Dataset unavailable. Please re-upload.")
+    try:
+        return ExplorationResponse(**explore_dataframe(entry[0], request))
+    except ValueError as err:
+        raise HTTPException(400, str(err)) from err
+
+
+# ---------------------------------------------------------------------------
+# 6. Results and Export
 # ---------------------------------------------------------------------------
 
 
@@ -428,7 +393,6 @@ def analyze_dataset(
 def get_analysis_results(
     dataset_id: str, x_infera_session: str | None = Header(None)
 ) -> AnalysisResponse:
-    """Retrieve previously calculated analysis results for a dataset."""
     check_owner(dataset_id, x_infera_session)
     result = RESULTS.get(dataset_id)
     if not result:
@@ -445,7 +409,6 @@ def download_analysis_report(
     format: str = Query(default="markdown", pattern="^(markdown|html)$"),
     x_infera_session: str | None = Header(None),
 ):
-    """Download an executive report in Markdown or HTML format."""
     check_owner(dataset_id, x_infera_session)
     result = RESULTS.get(dataset_id)
     if not result:
@@ -463,10 +426,6 @@ def download_analysis_report(
         headers={"Content-Disposition": 'attachment; filename="infera-report.md"'},
     )
 
-
-# ---------------------------------------------------------------------------
-# Local Development Runner
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     import uvicorn

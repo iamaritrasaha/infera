@@ -1,64 +1,92 @@
 # Learning Infera
 
-Start with **`infera/main.py`, function `upload_csv_file`**. Read its inputs and returned `UploadResponse`, then follow the calls you encounter.
+Infera is designed as a clear, readable teaching codebase.
+Execution starts at **`infera/main.py`** in function **`upload_csv_file`**.
 
-## Study order
+---
 
-1. Functions, parameters, return values, conditions, loops and exceptions.
-2. Lists, dictionaries, tuples, `None` and comprehensions.
-3. Imports, packages, virtual environments and type hints.
-4. pandas DataFrames/Series, column selection, missing data and aggregation.
-5. Pydantic models and FastAPI route decorators.
-6. Train/test splitting, leakage, scikit-learn pipelines and evaluation metrics.
+## 1. Complete Workflow Example
 
-## Important files
+Here is the exact journey of your data from a file on your disk to charts on your screen:
 
-| File | Responsibility |
+```
+[User Selects File]
+       │
+       ▼
+1. Upload CSV
+   • frontend: DatasetWorkspace.tsx calls uploadDatasetFile() in lib/api.ts
+   • backend: upload_csv_file() in infera/main.py receives the file
+       │
+       ▼
+2. Read with pandas
+   • load_dataset() & load_csv() in infera/data_loader.py read content via pd.read_csv()
+   • validate_dataframe() verifies row limits, unique columns, and finite numbers
+   • store_dataset() in infera/main.py saves (df, name) in the in-memory DATASETS map
+   • _build_upload_response() returns schema metadata and preview rows
+       │
+       ▼
+3. Calculate Statistics & Models
+   • frontend: User clicks "Launch Full Analysis", calling executeFullAnalysis() in lib/api.ts
+   • backend: analyze_dataset() in infera/main.py invokes run_full_analysis() in infera/analysis.py:
+     a. compute_quality_profile() (infera/data_loader.py) audits missing, duplicates, and outliers
+     b. compute_descriptive_statistics() (infera/statistics.py) computes mean, median, IQR, histograms
+     c. compute_correlations() (infera/correlation.py) computes Pearson & Spearman r and p-values
+     d. train_regression_models() (infera/regression.py) trains Linear, Ridge, and Random Forest pipelines
+     e. generate_markdown_report() & generate_html_report() (infera/reporting.py) generate evidence reports
+       │
+       ▼
+4. Return Result
+   • analyze_dataset() caches the payload in RESULTS[dataset_id]
+   • FastAPI serializes AnalysisResponse (defined in infera/models.py) as JSON
+       │
+       ▼
+5. Display in Frontend
+   • lib/api.ts validates the JSON payload with Zod (lib/response-schemas.ts)
+   • DatasetWorkspace.tsx switches to AnalysisView.tsx
+   • Tab components render metrics and charts (OverviewTab, StatisticsTab, MachineLearningTab, ExploreTab)
+```
+
+---
+
+## 2. File Responsibilities
+
+| File | Exact Responsibility |
 | --- | --- |
-| `infera/main.py` | Routes, local-access checks, bounded dictionaries and ownership |
-| `infera/models.py` | Input/output schemas; JSON `schema` aliases Python `dataset_schema` |
-| `infera/data_loader.py` | File parsing, validation, schema inference, previews and quality |
-| `infera/analysis.py` | Calls calculations in order and assembles the response |
-| `infera/statistics.py` | Numerical/categorical summaries and histogram bins |
-| `infera/correlation.py` | Complete-pair Pearson/Spearman coefficients and p-values |
-| `infera/regression.py` | Numeric predictors, train-only preprocessing, CV selection and holdout errors |
-| `infera/exploration.py` | Filters, group comparisons, time aggregation and relationships |
-| `infera/reporting.py` | Markdown evidence and escaped HTML |
-| `frontend/lib/api.ts` | Requests, errors, ownership headers and downloads |
-| `frontend/lib/response-schemas.ts` | Runtime validation before charts render |
-| `frontend/components/DatasetWorkspace.tsx` | Select/upload data and launch analysis |
-| `frontend/components/AnalysisView.tsx` | Tabs, reruns, focus and saved snapshots |
+| `infera/main.py` | FastAPI routes, local loopback checks, in-memory cache (`DATASETS`, `RESULTS`), and session ownership |
+| `infera/models.py` | Pydantic data schemas defining every API input and output structure |
+| `infera/data_loader.py` | File decoding (CSV, XLSX, Parquet, JSON), input bounds checking, schema inference, and data quality auditing |
+| `infera/analysis.py` | Coordinates the pipeline: quality → statistics → correlations → regression → discovery → reports |
+| `infera/statistics.py` | Computes column metrics (mean, std, IQR, skewness, kurtosis) and histogram bins using pandas & SciPy |
+| `infera/correlation.py` | Computes pairwise Pearson and Spearman correlation coefficients and significance p-values |
+| `infera/regression.py` | Preprocessing inside folds, 80/20 holdout evaluation, 5-fold CV selection, and feature importances |
+| `infera/exploration.py` | Filtered descriptive group summaries, time trends, and pairwise relationship scatter sampling |
+| `infera/reporting.py` | Generates standalone Markdown and HTML reports from analysis results |
+| `frontend/lib/api.ts` | Browser HTTP client with session tokens, timeout handling, error classifications, and schema parsing |
+| `frontend/components/DatasetWorkspace.tsx` | Main interface for uploading files, inspecting initial schema, and selecting target variables |
+| `frontend/components/AnalysisView.tsx` | Analysis dashboard organizing findings into 7 inspectable tabs |
 
-## Trace a CSV request
+---
 
-1. Select a CSV. Local preview is an estimate; the backend validates the full file.
-2. `uploadDatasetFile` builds `FormData` containing `file` and sends `POST /api/upload`.
-3. `upload_csv_file` reads at most the limit plus one byte, then calls `load_dataset` and `load_csv`.
-4. `load_csv` validates UTF-8, header names, row widths, shape and finite numbers, returning a DataFrame.
-5. `store_dataset` saves it under a UUID. `UploadResponse` includes schema and JSON-safe preview rows.
-6. Select a target and launch. `executeFullAnalysis` sends UUID, target/focus to `POST /api/analyze`.
-7. `analyze_dataset` checks ownership, takes the analysis lock and calls `run_full_analysis`.
-8. The coordinator computes quality, statistics, correlations and optional regression. The plan explains skipped analyses.
-9. Regression splits first. Pipeline means/scales fit only training rows. CV refits the whole pipeline in each fold. Training CV chooses the model; holdout metrics measure unseen performance.
-10. Reporting builds Markdown and escaped HTML. The endpoint validates/caches the result and sends JSON.
-11. Zod checks fields, then React displays charts. Downloads use `/api/results/{id}/report?format=markdown` or `html`.
+## 3. Recommended Study Order
 
-Follow functions, not fixed line numbers. Entirely missing numerical summaries use `None`/JSON `null`, not fabricated zeros. Sample variance/std use pandas' `ddof=1`; skewness/excess kurtosis use SciPy's default moment estimators. P-values do not prove causation. README.md describes model assumptions and removed capabilities.
+1. **`infera/main.py`**: Trace the route decorators `@app.post("/api/upload")` and `@app.post("/api/analyze")`.
+2. **`infera/data_loader.py`**: See how `load_csv()` and `validate_dataframe()` guard against bad inputs.
+3. **`infera/statistics.py`**: Learn how pandas Series are summarized into numeric distributions.
+4. **`infera/regression.py`**: Observe how scikit-learn pipelines avoid data leakage by fitting imputers and scalers only on training folds.
+5. **`infera/analysis.py`**: See how pure Python functions are chained together to build an end-to-end analytical result.
 
-## Windows debugging
+---
 
-Use README.md for setup and two-terminal startup. uv creates `.venv` and runs its interpreter without activation.
+## 4. Practical Exercises for Learners
 
-Open `D:\Development\infera` in VS Code. Install Microsoft's Python and Python Debugger extensions. Select `.venv\Scripts\python.exe` with **Python: Select Interpreter**, then choose **Debug Infera API** in Run and Debug. The included launch configuration starts Uvicorn without reload so breakpoints stay attached. Start the frontend separately.
+1. **Add a Range Metric**:
+   Extend `calculate_numerical_column_stats` in `infera/statistics.py` to calculate `range_val = max_val - min_val`. Add `range_metric: float | None` to `NumericalColumnStats` in `infera/models.py`.
 
-Break in `upload_csv_file`; upload a tiny CSV; step into `load_dataset`. Inspect `filename`, `content`, `df.shape` and `df.head()`. Break in `run_full_analysis` and inspect `schema_dict`, `target_column` and `modeling_result`. In `train_and_evaluate_single_model`, compare train/test indices and inspect the fitted imputer under `pipeline.steps`.
+2. **Add a Missingness Flag**:
+   In `inspect_columns` in `infera/data_loader.py`, flag columns where more than 50% of values are null. Verify how the UI and reports represent this.
 
-Run one test with `uv run pytest tests/test_audit_regressions.py -k preprocessing -v`. README.md lists full lint/type/build/browser checks. Investigate failed assertions instead of deleting them.
+3. **Single-Column Statistics Route**:
+   Add a `@app.get("/api/datasets/{dataset_id}/columns/{column_name}")` endpoint in `infera/main.py` that returns the descriptive stats of just one column.
 
-## Five exercises (without solutions)
-
-1. Add a numeric range metric. Handle an entirely missing column and test positive, negative, constant and missing inputs. Trace the Python schema through Zod and the UI.
-2. Add a mostly-missing flag to upload summaries. Document the threshold and test immediately below, at and above it.
-3. Add a one-column statistics endpoint. Validate ownership and column names; test numeric, categorical, unknown and evicted datasets.
-4. Add a DummyRegressor baseline. Explain its use, keep holdout data out of selection, and test errors on known data.
-5. Add an explicit clear-dataset action. Remove report/owner records too. Test that another browser session cannot clear someone else's data.
+4. **Baseline Dummy Regressor**:
+   In `infera/regression.py`, add `DummyRegressor(strategy="mean")` to `candidates` to benchmark whether Ridge and Random Forest actually outperform the simplest possible baseline.

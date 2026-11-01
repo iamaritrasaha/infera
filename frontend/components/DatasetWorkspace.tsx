@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AnalysisResponse, AnalysisFocus, UploadResponse } from "@/lib/types";
+import { AnalysisResponse, UploadResponse } from "@/lib/types";
 import { executeFullAnalysis, errorMessage, uploadDatasetFile } from "@/lib/api";
 import { LocalFilePreview, UploadZone } from "./UploadZone";
 import { SampleDatasets } from "./SampleDatasets";
@@ -128,17 +128,12 @@ export function DatasetWorkspace() {
     if (!uploadData || isAnalyzing) return;
     setIsAnalyzing(true);
     setError(null);
-
-    const focus: AnalysisFocus = {
-      question: "automatic",
-    };
-
     try {
       const result = await executeFullAnalysis(
         uploadData.dataset_id,
         selectedTarget || undefined,
-        focus,
-        selectedGoal
+        { question: "automatic" },
+        selectedGoal,
       );
       setAnalysisResult(result);
     } catch (e) {
@@ -148,8 +143,7 @@ export function DatasetWorkspace() {
     }
   };
 
-  const hasDatetimeColumn =
-    uploadData?.columns.some((c) => c.inferred_type === "datetime") ?? false;
+  const hasDatetime = uploadData?.columns.some((c) => c.inferred_type === "datetime") ?? false;
 
   return (
     <div className="workspace-container">
@@ -158,7 +152,11 @@ export function DatasetWorkspace() {
       {savedSnapshot ? (
         <SavedAnalysisViewer snapshot={savedSnapshot} onClose={() => setSavedSnapshot(null)} />
       ) : analysisResult ? (
-        <AnalysisView initialData={analysisResult} onReset={reset} source={isPrecomputedExample ? "precomputed_example" : "computed"} />
+        <AnalysisView
+          initialData={analysisResult}
+          onReset={reset}
+          source={isPrecomputedExample ? "precomputed_example" : "computed"}
+        />
       ) : !uploadData ? (
         <div className="dataset-start">
           <div className="workspace-intro">
@@ -173,7 +171,6 @@ export function DatasetWorkspace() {
             </p>
           </div>
 
-          {/* Local File Preview (Safe client-side inspection before/during upload) */}
           {localPreview && (
             <div className="mb-6 rounded-xl border border-cyan-500/30 bg-slate-900/80 p-5 shadow-lg">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
@@ -186,9 +183,7 @@ export function DatasetWorkspace() {
                       {localPreview.sizeFormatted} · ~{localPreview.rowCountEstimate.toLocaleString()} rows
                     </span>
                   </div>
-                  <h3 className="mt-1 text-base font-semibold text-white">
-                    {localPreview.name}
-                  </h3>
+                  <h3 className="mt-1 text-base font-semibold text-white">{localPreview.name}</h3>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -220,9 +215,7 @@ export function DatasetWorkspace() {
               </div>
 
               <div className="mt-3 text-xs text-slate-400">
-                <p>
-                  First {localPreview.sampleRows.length} records parsed directly inside your browser. No files are transferred until you upload.
-                </p>
+                <p>First {localPreview.sampleRows.length} records parsed directly inside your browser.</p>
                 <div className="mt-3 overflow-x-auto rounded-lg border border-slate-800 bg-slate-950/60">
                   <table className="w-full text-left text-xs font-mono">
                     <thead className="bg-slate-900/90 text-slate-300 border-b border-slate-800">
@@ -252,10 +245,7 @@ export function DatasetWorkspace() {
           )}
 
           <div className="upload-layout">
-            <UploadZone
-              onUploadSuccess={load}
-              onLocalPreview={(preview) => setLocalPreview(preview)}
-            />
+            <UploadZone onUploadSuccess={load} onLocalPreview={setLocalPreview} />
             <aside className="upload-aside">
               <div className="step-label">01 / IMPORT</div>
               <h2>Ready for real analysis.</h2>
@@ -268,13 +258,11 @@ export function DatasetWorkspace() {
                   <Database size={15} /> Up to 50,000 rows and 100 columns
                 </li>
                 <li>
-                  <ShieldCheck size={15} /> Access isolated to this browser
-                  session
+                  <ShieldCheck size={15} /> Access isolated to this browser session
                 </li>
               </ul>
               <p className="text-xs">
-                Temporary datasets expire after one hour of inactivity or a
-                server restart.
+                Temporary datasets expire after one hour of inactivity or a server restart.
               </p>
             </aside>
           </div>
@@ -297,16 +285,11 @@ export function DatasetWorkspace() {
               <p className="eyebrow">PROFILE READY / CONFIGURE ANALYSIS</p>
               <h2>{uploadData.dataset_name}</h2>
               <p className="font-mono text-xs text-slate-400">
-                {uploadData.row_count.toLocaleString()} rows ·{" "}
-                {uploadData.column_count} columns ·{" "}
+                {uploadData.row_count.toLocaleString()} rows · {uploadData.column_count} columns ·{" "}
                 {uploadData.memory_formatted}
               </p>
             </div>
-            <button
-              onClick={reset}
-              disabled={isAnalyzing}
-              className="button-secondary"
-            >
+            <button onClick={reset} disabled={isAnalyzing} className="button-secondary">
               <RotateCcw size={14} />
               Upload Different File
             </button>
@@ -318,9 +301,7 @@ export function DatasetWorkspace() {
               ["Features", uploadData.column_count],
               [
                 "Missing cells",
-                uploadData.columns
-                  .reduce((n, c) => n + c.null_count, 0)
-                  .toLocaleString(),
+                uploadData.columns.reduce((n, c) => n + c.null_count, 0).toLocaleString(),
               ],
               ["Data health", `${uploadData.health_score}/100`],
             ].map(([label, value]) => (
@@ -331,7 +312,7 @@ export function DatasetWorkspace() {
             ))}
           </div>
 
-          {/* Analysis Goal Selector (Phase 8) */}
+          {/* Analysis Goal Selector */}
           <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
@@ -364,11 +345,7 @@ export function DatasetWorkspace() {
                     }`}
                   >
                     <div className="flex items-center gap-2">
-                      <Icon
-                        className={`w-4 h-4 ${
-                          isSelected ? "text-cyan-300" : "text-slate-400"
-                        }`}
-                      />
+                      <Icon className={`w-4 h-4 ${isSelected ? "text-cyan-300" : "text-slate-400"}`} />
                       <span className="text-xs font-semibold">{goal.title}</span>
                     </div>
                     <p className="mt-1.5 text-[11px] text-slate-400 leading-relaxed">
@@ -379,8 +356,7 @@ export function DatasetWorkspace() {
               })}
             </div>
 
-            {/* Date-absence transparency warning when Trends is selected without temporal column */}
-            {selectedGoal === "trends" && !hasDatetimeColumn && (
+            {selectedGoal === "trends" && !hasDatetime && (
               <div
                 role="alert"
                 className="mt-3 p-3 rounded-lg border border-amber-500/30 bg-amber-950/20 text-xs text-amber-200 flex items-start gap-2.5"
@@ -453,9 +429,7 @@ export function DatasetWorkspace() {
                       <td>{c.name}</td>
                       <td>{c.inferred_type}</td>
                       <td className="font-mono">{c.null_percentage}%</td>
-                      <td className="font-mono">
-                        {c.unique_count.toLocaleString()}
-                      </td>
+                      <td className="font-mono">{c.unique_count.toLocaleString()}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -463,7 +437,6 @@ export function DatasetWorkspace() {
             </div>
           </div>
 
-          {/* Launch Full Analysis Button (Anti-Gatekeeper Principle: Never disabled simply due to connection polling) */}
           <div className="analysis-launch">
             <p>
               Real Python calculations, applicable tests, and model comparisons.

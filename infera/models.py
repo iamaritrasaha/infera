@@ -1,8 +1,7 @@
 """Data models for Infera.
 
-These Pydantic models define the structured inputs and outputs for the
-application. Beginners can look here to understand the exact shape of
-the data moving into and out of the API.
+These Pydantic models define the structured inputs and outputs for the API,
+providing type safety and automated validation for FastAPI endpoints.
 """
 
 from typing import Any, Literal
@@ -15,18 +14,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class HealthResponse(BaseModel):
-    """Basic health status of the application."""
-
-    status: str = Field(default="ok", description="Overall service status")
-    project: str = Field(default="Infera", description="Project name")
-    version: str = Field(default="0.5.0", description="Current application version")
-    engine_status: str = Field(default="ready", description="Analysis engine state")
-    timestamp: float = Field(default=0.0, description="Unix timestamp of the response")
+    status: str = "ok"
+    project: str = "Infera"
+    version: str = "0.5.0"
+    engine_status: str = "ready"
+    timestamp: float = 0.0
 
 
 class DiagnosticResponse(BaseModel):
-    """System information useful for troubleshooting."""
-
     status: str = "ok"
     project: str = "Infera"
     version: str = "0.5.0"
@@ -37,13 +32,11 @@ class DiagnosticResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Column & Schema Information
+# Column & Schema Metadata
 # ---------------------------------------------------------------------------
 
 
 class ColumnSummary(BaseModel):
-    """Summary of a single column's data type, missing values, and samples."""
-
     name: str
     dtype: str
     original_dtype: str | None = None
@@ -55,15 +48,11 @@ class ColumnSummary(BaseModel):
 
 
 class PotentialTarget(BaseModel):
-    """A column that may be suitable as a machine learning prediction target."""
-
     column: str
-    suggested_type: str  # e.g. "regression" or "classification"
+    suggested_type: str  # "regression", "binary_classification", "multiclass_classification"
 
 
 class SampleDataset(BaseModel):
-    """Metadata describing a pre-loaded sample dataset."""
-
     id: str
     name: str
     description: str
@@ -79,8 +68,6 @@ class SampleDataset(BaseModel):
 
 
 class UploadResponse(BaseModel):
-    """Returned after a CSV file is successfully uploaded and initially inspected."""
-
     dataset_id: str
     dataset_name: str
     row_count: int
@@ -94,8 +81,6 @@ class UploadResponse(BaseModel):
 
 
 class AnalyzeRequest(BaseModel):
-    """Parameters sent by the user to trigger dataset analysis."""
-
     dataset_id: str
     target_column: str | None = None
     metric_column: str | None = None
@@ -111,8 +96,6 @@ class AnalyzeRequest(BaseModel):
 
 
 class HistogramBin(BaseModel):
-    """A single bucket in a numerical histogram."""
-
     bin_start: float
     bin_end: float
     count: int
@@ -120,8 +103,6 @@ class HistogramBin(BaseModel):
 
 
 class NumericalColumnStats(BaseModel):
-    """Detailed statistical measurements for a single numerical column."""
-
     column: str
     count: int
     null_count: int
@@ -142,16 +123,12 @@ class NumericalColumnStats(BaseModel):
 
 
 class CategoryFrequency(BaseModel):
-    """The count and percentage of occurrences for one distinct category."""
-
     category: str
     count: int
     percentage: float
 
 
 class CategoricalColumnStats(BaseModel):
-    """Distribution measurements for a single categorical or text column."""
-
     column: str
     total_count: int
     null_count: int
@@ -164,8 +141,6 @@ class CategoricalColumnStats(BaseModel):
 
 
 class DescriptiveStatistics(BaseModel):
-    """Container grouping numerical and categorical statistical calculations."""
-
     numerical: list[NumericalColumnStats]
     categorical: list[CategoricalColumnStats]
 
@@ -176,8 +151,6 @@ class DescriptiveStatistics(BaseModel):
 
 
 class CorrelationPair(BaseModel):
-    """Relationship between two numerical variables."""
-
     feature_a: str
     feature_b: str
     pearson_r: float
@@ -192,8 +165,6 @@ class CorrelationPair(BaseModel):
 
 
 class CorrelationResult(BaseModel):
-    """Complete correlation matrices and list of top relationships."""
-
     columns: list[str]
     pearson_matrix: list[list[float | None]]
     spearman_matrix: list[list[float | None]]
@@ -207,30 +178,22 @@ class CorrelationResult(BaseModel):
 
 
 class FeatureImportance(BaseModel):
-    """Relative importance of an input column in predicting the target."""
-
     feature: str
     importance: float
     signed_coefficient: float | None = None
 
 
 class PredictionVsActual(BaseModel):
-    """Comparison point for testing model accuracy."""
-
     actual: float
     predicted: float
 
 
 class ResidualPoint(BaseModel):
-    """Residual error (actual minus predicted) for evaluating model fit."""
-
     predicted: float
     residual: float
 
 
 class RegressionModelResult(BaseModel):
-    """Performance metrics and diagnostics for one trained regression model."""
-
     model_name: str
     display_name: str
     is_best_model: bool
@@ -246,8 +209,6 @@ class RegressionModelResult(BaseModel):
 
 
 class ModelingResult(BaseModel):
-    """Full results of training and comparing machine learning models."""
-
     target_column: str
     train_samples: int
     test_samples: int
@@ -267,8 +228,6 @@ class ModelingResult(BaseModel):
 
 
 class MissingValueProfile(BaseModel):
-    """Audit of missing (null/NaN) values across the dataset."""
-
     total_cells: int
     total_missing_cells: int
     overall_missing_percentage: float
@@ -283,8 +242,6 @@ class MissingValueProfile(BaseModel):
 
 
 class DuplicateProfile(BaseModel):
-    """Audit of duplicate rows."""
-
     total_rows: int
     duplicate_rows_count: int
     duplicate_rows_percentage: float
@@ -297,8 +254,6 @@ class DuplicateProfile(BaseModel):
 
 
 class OutlierProfile(BaseModel):
-    """Audit of numerical outliers using the IQR (Interquartile Range) method."""
-
     total_numerical_columns_analyzed: int
     columns_with_outliers_count: int
     total_iqr_outliers: int
@@ -307,8 +262,6 @@ class OutlierProfile(BaseModel):
 
 
 class CardinalityProfile(BaseModel):
-    """Audit of constant and high-cardinality categorical columns."""
-
     constant_columns: list[str]
     quasi_constant_columns: list[str]
     high_cardinality_categorical_columns: list[str]
@@ -316,8 +269,6 @@ class CardinalityProfile(BaseModel):
 
 
 class DataQuality(BaseModel):
-    """Consolidated dataset quality metrics."""
-
     missing: MissingValueProfile
     duplicates: DuplicateProfile
     outliers: OutlierProfile
@@ -330,8 +281,6 @@ class DataQuality(BaseModel):
 
 
 class AnalysisResponse(BaseModel):
-    """Comprehensive payload combining all analytical findings."""
-
     model_config = ConfigDict(protected_namespaces=())
 
     dataset_id: str
@@ -354,9 +303,12 @@ class AnalysisResponse(BaseModel):
     reports: dict[str, str] = Field(default_factory=dict)
 
 
-class ExplorationFilter(BaseModel):
-    """One bounded filter applied consistently before exploration calculations."""
+# ---------------------------------------------------------------------------
+# Interactive Exploration Models
+# ---------------------------------------------------------------------------
 
+
+class ExplorationFilter(BaseModel):
     column: str = Field(..., min_length=1, max_length=100)
     kind: Literal["category", "number", "date"]
     values: list[str] = Field(default_factory=list, max_length=100)
@@ -367,8 +319,6 @@ class ExplorationFilter(BaseModel):
 
 
 class ExploreRequest(BaseModel):
-    """Interactive, bounded exploration of one cached session-owned dataset."""
-
     dataset_id: str = Field(..., pattern=r"^[a-zA-Z0-9_\-]{8,64}$")
     mode: Literal["group", "trend", "relationship"]
     metric_column: str | None = Field(None, max_length=100)
