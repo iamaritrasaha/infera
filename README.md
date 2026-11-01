@@ -1,53 +1,106 @@
+<p align="center"><img src="assets/infera-icon.svg" width="64" height="64" alt="Infera icon"></p>
+
 # Infera
 
-Infera is a local data-analysis learning application using Python, FastAPI, pandas, SciPy, scikit-learn and a Next.js/React dashboard. The canonical Windows workspace is `D:\Development\infera`.
+**Turn data into evidence.**
 
-## Windows setup (PowerShell 7)
+Infera is an open-source data analysis platform that turns structured datasets into inspectable statistical findings, visualizations, predictive models, and downloadable evidence reports. It is independently created and maintained by **Aritra Saha**.
 
-Verified with Python 3.13.16, Node.js 26.13.0, uv 0.13.6 and PowerShell 7.6.5. Install uv and Node.js first. From the root:
+I built Infera to make statistical analysis and machine learning accessible without writing extensive processing code for every dataset. Its Python-first engine performs the computations; the Next.js interface presents the results and their limitations.
+
+> Infera doesn't guess. It computes, validates, and explains.
+
+## Available analysis
+
+- **CSV datasets:** Upload a CSV or generate a synthetic housing dataset to explore the application.
+- **Data overview:** Row and column counts, column types, missing values, unique values, and a ten-row preview.
+- **Descriptive statistics:** Count, mean, standard deviation, minimum, quartiles, median, and maximum for numeric columns.
+- **Pearson correlations:** Ranked relationships between numeric columns and a visual correlation matrix.
+- **Linear regression:** Choose a numeric target, train a scikit-learn model, and inspect coefficients, actual-versus-predicted values, R², MAE, MSE, and RMSE.
+- **Reports:** Download a Markdown report with the computed results.
+
+The current code supports one regression algorithm rather than an automated comparison of many algorithms. Previous releases offered other analyses; those implementations remain available in Git history.
+
+## Architecture
+
+```text
+Browser: Next.js + React + TypeScript
+    |
+    | HTTP requests
+    v
+FastAPI (infera/main.py)
+    |
+    +-- pandas (infera/analysis.py)
+    |     CSV parsing, statistics, correlations, reports
+    |
+    +-- scikit-learn (infera/ml.py)
+          Linear regression and model evaluation
+```
+
+The frontend renders results computed by Python. Infera does not require an external AI API or a database.
+
+## Repository structure
+
+| Path | Purpose |
+| --- | --- |
+| `infera/main.py` | FastAPI application, uploads, dataset cache, endpoints |
+| `infera/analysis.py` | CSV parsing, statistics, correlations, and Markdown reports |
+| `infera/ml.py` | Train and evaluate linear regression |
+| `frontend/app/` | Next.js page, layout, and styling |
+| `frontend/components/` | Upload form, results display, navigation |
+| `frontend/lib/api.ts` | Browser requests to FastAPI and response types |
+| `tests/` | Python API and analysis tests |
+| `frontend/tests/` | Browser end-to-end tests |
+| `assets/`, `frontend/public/` | Brand and interface assets |
+| `sample_data/` | Synthetic example data and a generator |
+
+The repository also contains historical release reports, deployment configurations, and a compatibility `backend/` directory from earlier versions. They are not the starting point for the current application.
+
+## Local development
+
+Requirements: Python 3.11 or newer, [uv](https://docs.astral.sh/uv/), Node.js, and npm.
+
+From the repository root, install Python dependencies and start the API:
 
 ```powershell
-Set-Location D:\Development\infera
 uv sync --frozen --extra dev
 uv run uvicorn infera.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-uv uses `.python-version` and creates `.venv`; activation is unnecessary. Root `pyproject.toml` and `uv.lock` are authoritative. Do not create another environment under `backend`.
-
-In a second terminal:
+In a second terminal, start the frontend:
 
 ```powershell
-Set-Location D:\Development\infera\frontend
+cd frontend
 npm ci
 Copy-Item .env.example .env.local
-npm run dev -- --hostname 127.0.0.1
+npm run dev
 ```
 
-Open [the dashboard](http://127.0.0.1:3000/dashboard), [API docs](http://127.0.0.1:8000/docs), or [health](http://127.0.0.1:8000/health). Stop with Ctrl+C. No Linux directory or WSL is needed.
+Open `http://localhost:3000`. API documentation is available at `http://127.0.0.1:8000/docs` and the health endpoint at `http://127.0.0.1:8000/health`.
 
-The frontend reads `NEXT_PUBLIC_API_URL` from `frontend/.env.local`. Restart development or rebuild production after changing it. Backend limits are explicit constants in `infera/data_loader.py` and `infera/main.py`; legacy backend environment variables are not read. No credentials are needed.
+The frontend reads `NEXT_PUBLIC_API_URL` from `frontend/.env.local`. If the API address changes, update the value and restart the frontend.
 
-## Functionality
+## API
 
-- CSV, XLSX (first sheet), JSON records/table, Parquet uploads and four bundled samples.
-- Schema detection, missing/duplicate/outlier profiles, numerical/categorical summaries, histograms and Pearson/Spearman correlations.
-- Numeric regression with Linear Regression, Ridge and Random Forest. Missing predictors are imputed and standardized inside a scikit-learn pipeline fitted separately in every training fold. Missing targets are dropped.
-- A fixed-seed 80/20 holdout; training five-fold CV selects the model. With 10-12 usable rows, CV is unavailable and fixed candidate order selects the fallback. Outputs include R-squared, MAE, MSE, RMSE, residuals and model-specific importance.
-- Filtered group, trend and relationship exploration, focus controls, charts, browser snapshots and Markdown/HTML downloads.
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| GET | `/health`, `/api/health` | Check API status |
+| POST | `/api/upload` | Upload and analyze a CSV |
+| POST | `/api/sample` | Generate a sample housing dataset |
+| POST | `/api/regression` | Train linear regression for a selected target |
+| GET | `/api/report/{dataset_id}` | Download the Markdown report |
 
-Categorical predictors are excluded from regression; encode them deliberately when learning preprocessing. Identical modeling observations are deduplicated before splitting. Random splits assume independent observations; repeated-person or chronological observations can inflate scores. This is not forecasting. Importance describes a model, not causation. Linear coefficients are per training standard deviation. Correlation p-values are exploratory and unadjusted for multiple comparisons.
+## Methodology and limits
 
-Classification, clustering, PCA, stationarity diagnostics and hypothesis-test suites were removed in refactor `80f2126`. They are recoverable in Git but **not implemented in this version**. The plan/report identify them as skipped. Descriptive time aggregation works through the explorer. Old frontend chart components remain for future work; null fields are not algorithm implementations.
+- CSV uploads are limited to 20 MiB, 100,000 rows, and 100 columns.
+- Datasets and the latest regression result are held in process memory and disappear when the API restarts.
+- Linear regression uses an 80/20 train/test split. Missing predictor values are imputed using means fitted on training data only.
+- A random split assumes independent observations and is not appropriate for every time series or grouped dataset. Correlation and model coefficients do not establish causation.
+- The current API has no public-user authentication and uses permissive development CORS settings. Do not expose it to untrusted networks without hardening it first.
 
-## Architecture and request flow
+## Testing
 
-`frontend/app/dashboard/page.tsx` renders `DatasetWorkspace`. `frontend/lib/api.ts` sends multipart `POST /api/upload` to `infera/main.py:upload_csv_file`. `data_loader.load_dataset` validates a file and returns a DataFrame. Upload returns a UUID and preview. `POST /api/analyze` sends UUID and optional target/focus to `analysis.run_full_analysis`. Statistics, correlations, optional regression and reports return together. Results/downloads use `/api/results/{dataset_id}`. Zod schemas in `frontend/lib/response-schemas.ts` validate JSON before charts render.
-
-Nine functional Python modules plus `__init__.py`: main, models, data_loader, analysis, statistics, correlation, regression, reporting and exploration. `backend/app/main.py` is a compatibility import only. Install from the root.
-
-## Checks
-
-From the root:
+From the repository root:
 
 ```powershell
 uv run pytest -q
@@ -56,27 +109,23 @@ uv run ruff format --check .
 uv run ty check infera
 ```
 
-From `frontend`:
+From `frontend/`:
 
 ```powershell
 npm run lint
 npm run typecheck
 $env:NEXT_PUBLIC_API_URL = 'http://127.0.0.1:8001'
 npm run build
-npx playwright install chromium firefox
+npx playwright install chromium
 npm run test:e2e
 ```
 
-Playwright starts its own backend at 8001 and built frontend at 3100; both ports must be free. It uses native uv. Live production tests are skipped unless explicitly configured. See `docs/WINDOWS_AUDIT.md` for exact results and limitations.
+The Playwright suite starts the API on port 8001 and the built frontend on port 3100. Ensure both ports are free.
 
-## Local security and retention
+## Releases and deployment
 
-Use one trusted user on one machine, loopback binding and **one Uvicorn worker**. Do not use a tunnel or reverse proxy. Middleware rejects non-loopback clients, unexpected Host headers and foreign browser origins. CORS permits the documented local frontend ports. A small owner map honors existing browser ownership headers without a session framework. Tokenless API clients share a local namespace; this is not public authentication.
+Earlier release and production-verification reports remain in the repository for reference. They describe the architecture and functionality of those historical releases, not necessarily the current implementation.
 
-Limits: 15 MiB/file, 5,000 rows, 100 columns, finite numeric magnitudes no greater than 1e50, and 50 MiB expanded XLSX/Parquet data. Eight datasets and their latest reports remain in FIFO process memory. Restarting clears them; no TTL or persistence. Concurrent model analyses receive 429. Parsing/modeling is bounded but not isolated from hostile local code. Browser snapshots persist independently until deleted in that browser.
+The current application can be developed and tested locally. Public deployment requires configuring a compatible backend and reviewing the API's security and operational limits; publishing the frontend alone does not deploy the Python service.
 
-Public deployment is unsupported. Legacy Render/Compose configurations are preserved under `docs/legacy/*.disabled`. Historical deployment reports describe old code. No public service was changed.
-
-## Git and learning
-
-Remote history is restored as `origin/main`; local refactor history remains on `master`. They are unrelated histories: do not blindly merge or force-push. Baseline: `backup/pre-audit-20261101`; repairs: `codex/windows-audit`. Recovery bundle: `D:\Development\infera-recovery-20261101.bundle`. Read `LEARNING_GUIDE.md` next.
+Created and maintained by **Aritra Saha**. Distributed under the [MIT License](LICENSE).
