@@ -29,7 +29,7 @@ from infera.ml import train_linear_regression
 
 app = FastAPI(
     title="Infera",
-    description="Beginner-friendly Python Data Analysis and Machine Learning Engine",
+    description="Python Data Analysis and Machine Learning Engine",
     version="0.6.0",
 )
 

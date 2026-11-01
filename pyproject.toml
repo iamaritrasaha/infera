@@ -1,7 +1,7 @@
 [project]
 name = "infera"
 version = "0.5.0"
-description = "Infera — Beginner-friendly Python Data Analysis Engine"
+description = "Infera — Open-source Data Analysis Platform"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
