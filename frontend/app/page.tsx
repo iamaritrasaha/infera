@@ -41,27 +41,27 @@ const capabilities = [
   ],
   [
     FlaskConical,
-    "Statistical Testing",
-    "Test the question, not a hunch.",
-    "Compare groups with documented tests, p-values, and assumption checks.",
+    "Correlation Analysis",
+    "Inspect numerical associations.",
+    "Inspect Pearson and Spearman coefficients; formal hypothesis-test suites were removed.",
   ],
   [
     ChartNoAxesCombined,
     "Regression",
     "Compare continuous predictions.",
-    "Benchmark regressors against a dummy baseline with held-out errors and training cross-validation.",
+    "Compare Linear, Ridge and Random Forest using training cross-validation and held-out errors.",
   ],
   [
     GitBranch,
     "Classification",
     "Understand every prediction.",
-    "Compare class-aware metrics, inspect confusion matrices, and check imbalance.",
+    "Removed in the beginner refactor. Classification is explicitly marked as skipped.",
   ],
   [
     Layers,
     "Clustering",
     "Explore structure without labels.",
-    "Compare clustering methods and inspect computed PCA projections.",
+    "Clustering and PCA were removed; their historical implementations remain in Git.",
   ],
   [
     CircleDot,

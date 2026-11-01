@@ -55,11 +55,11 @@ export interface NumericalDistribution {
   median: number | null;
   std: number | null;
   variance: number | null;
-  min: number;
-  max: number;
-  q25: number;
-  q75: number;
-  iqr: number;
+  min: number | null;
+  max: number | null;
+  q25: number | null;
+  q75: number | null;
+  iqr: number | null;
   skewness: number | null;
   skewness_interpretation: string;
   kurtosis: number | null;
@@ -195,7 +195,7 @@ export interface RegressionModelResult {
   cv_r2_mean: number | null;
   cv_r2_std: number | null;
   is_best_model: boolean;
-  feature_importances: { feature: string; importance: number; signed_coefficient?: number }[];
+  feature_importances: { feature: string; importance: number; signed_coefficient?: number | null }[];
   predictions_vs_actual: { actual: number; predicted: number }[];
   residuals: { predicted: number; residual: number }[];
 }

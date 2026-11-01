@@ -20,7 +20,7 @@ export default defineConfig({
   ],
   webServer: remoteBase ? undefined : [
     {
-      command: "../backend/.venv/bin/python -m uvicorn app.main:app --app-dir ../backend --host 127.0.0.1 --port 8001",
+      command: "uv run --project .. uvicorn infera.main:app --app-dir .. --host 127.0.0.1 --port 8001",
       url: "http://127.0.0.1:8001/health",
       env: { CORS_ORIGINS: '["http://127.0.0.1:3100"]', OMP_NUM_THREADS: "1", OPENBLAS_NUM_THREADS: "1", MKL_NUM_THREADS: "1" },
       reuseExistingServer: false,

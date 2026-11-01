@@ -35,7 +35,7 @@ export const metadata: Metadata = {
     template: "%s | Infera",
   },
   description:
-    "Upload structured datasets and automatically profile quality, formulate problems, test hypotheses, compare machine learning models, and generate evidence-backed findings.",
+    "Upload structured datasets and automatically profile quality, inspect correlations, compare numeric regression models, and generate evidence-backed findings.",
 };
 
 export default function RootLayout({
