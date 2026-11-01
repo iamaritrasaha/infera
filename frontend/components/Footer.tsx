@@ -1,41 +1,23 @@
-import Link from "next/link";
-import Image from "next/image";
 import { ArrowUpRight } from "lucide-react";
 
 export function Footer() {
   return (
-    <footer className="site-footer">
-      <div className="footer-main">
+    <footer className="border-t border-slate-900 bg-slate-950 py-8 text-xs text-slate-500">
+      <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div>
-          <Link href="/" className="brand">
-            <Image src="/infera-icon.svg" width={28} height={28} alt="" />
-            <span>Infera</span>
-          </Link>
-          <p>
-            Turn data into evidence.
-            <br />
-            Independent, open-source, Python-first.
-          </p>
+          <span>Infera · Developed by Aritra Saha · MIT License</span>
         </div>
-        <nav aria-label="Footer navigation">
-          <Link href="/dashboard">Workspace</Link>
-          <Link href="/docs">Documentation</Link>
-          <Link href="/about">About</Link>
+        <div className="flex items-center gap-6">
+          <span>Real Python computations · Transparent evidence</span>
           <a
             href="https://github.com/iamaritrasaha/infera"
             target="_blank"
             rel="noreferrer"
+            className="flex items-center gap-1 hover:text-slate-300 transition-colors"
           >
-            GitHub <ArrowUpRight size={12} />
+            Repository <ArrowUpRight size={12} />
           </a>
-        </nav>
-      </div>
-      <div className="footer-bottom">
-        <span>Created and developed by Aritra Saha.</span>
-        <span>
-          MIT License <span className="mx-3">/</span> Real calculations.
-          Transparent evidence.
-        </span>
+        </div>
       </div>
     </footer>
   );

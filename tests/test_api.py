@@ -1,105 +1,96 @@
-"""Integration tests for Infera FastAPI endpoints.
-
-Demonstrates:
-1. Health and diagnostics endpoints.
-2. Listing and loading sample datasets.
-3. Uploading a custom CSV file.
-4. Running the full analysis pipeline via HTTP POST.
-5. Retrieving cached results and downloading Markdown reports.
-"""
-
-from pathlib import Path
+"""Tests for Infera FastAPI endpoints."""
 
 from fastapi.testclient import TestClient
 
 from infera.main import app
 
 client = TestClient(app)
-SAMPLE_DIR = Path(__file__).resolve().parent.parent / "sample_data"
 
 
-def test_health_check_endpoint():
-    """Verify service health endpoint returns 200 OK."""
-    response = client.get("/health")
+def test_health_endpoint():
+    response = client.get("/api/health")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "ok"
-    assert data["project"] == "Infera"
+    assert data["app"] == "infera"
 
 
-def test_diagnostic_endpoint():
-    """Verify diagnostic endpoint returns uptime and Python version without crashing."""
-    response = client.get("/diagnostic")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "ok"
-    assert "python_version" in data
-
-
-def test_list_sample_datasets():
-    """Verify listing bundled sample datasets."""
-    response = client.get("/api/samples")
-    assert response.status_code == 200
-    samples = response.json()
-    assert len(samples) >= 4
-    sample_ids = [s["id"] for s in samples]
-    assert "housing" in sample_ids
-    assert "customer_churn" in sample_ids
-
-
-def test_load_sample_and_run_analysis():
-    """Verify end-to-end flow: load sample -> analyze -> get results -> download report."""
-    # 1. Load sample dataset
-    load_res = client.post("/api/samples/housing/load")
-    assert load_res.status_code == 200
-    load_data = load_res.json()
-    assert "dataset_id" in load_data
-    assert load_data["row_count"] > 100
-    dataset_id = load_data["dataset_id"]
-
-    # 2. Run analysis
-    analyze_res = client.post(
-        "/api/analyze",
-        json={"dataset_id": dataset_id, "target_column": "price"},
+def test_upload_csv_success():
+    csv_content = "feature_x,feature_y,target\n" + "\n".join(
+        f"{i},{i * 2},{i * 3 + 1}" for i in range(25)
     )
-    assert analyze_res.status_code == 200
-    analysis = analyze_res.json()
-    assert analysis["dataset_id"] == dataset_id
-    assert analysis["health_score"] > 50
-    assert analysis["problem_detection"]["problem_type"] == "regression"
-    assert analysis["modeling"] is not None
-    assert len(analysis["modeling"]["models"]) >= 2
-
-    # 3. Retrieve analysis from cache
-    get_res = client.get(f"/api/results/{dataset_id}")
-    assert get_res.status_code == 200
-    assert get_res.json()["dataset_id"] == dataset_id
-
-    # 4. Download Markdown report
-    report_res = client.get(f"/api/results/{dataset_id}/report?format=markdown")
-    assert report_res.status_code == 200
-    assert "INFERA DATA SCIENCE EVIDENCE REPORT" in report_res.text
-
-
-def test_upload_csv_file():
-    """Verify uploading a CSV directly via multipart form."""
-    csv_bytes = b"feature_a,feature_b,target\n1,10,100\n2,20,200\n3,30,300\n4,40,400\n"
-    response = client.post(
-        "/api/upload",
-        files={"file": ("test_upload.csv", csv_bytes, "text/csv")},
-    )
+    files = {"file": ("test_dataset.csv", csv_content.encode("utf-8"), "text/csv")}
+    response = client.post("/api/upload", files=files)
     assert response.status_code == 201
     data = response.json()
     assert "dataset_id" in data
-    assert data["row_count"] == 4
-    assert data["column_count"] == 3
+    assert data["filename"] == "test_dataset.csv"
+    assert data["summary"]["row_count"] == 25
+    assert len(data["correlations"]["pairs"]) > 0
 
 
-def test_upload_empty_csv_rejected():
-    """Verify that uploading an empty CSV returns 400 Bad Request."""
-    response = client.post(
-        "/api/upload",
-        files={"file": ("empty.csv", b"", "text/csv")},
-    )
+def test_upload_csv_invalid_extension():
+    files = {"file": ("data.json", b'{"key": "value"}', "application/json")}
+    response = client.post("/api/upload", files=files)
+    assert response.status_code == 400
+    assert "Only CSV files" in response.json()["detail"]
+
+
+def test_upload_csv_empty():
+    files = {"file": ("empty.csv", b"", "text/csv")}
+    response = client.post("/api/upload", files=files)
     assert response.status_code == 400
     assert "empty" in response.json()["detail"].lower()
+
+
+def test_sample_dataset_endpoint():
+    response = client.post("/api/sample")
+    assert response.status_code == 201
+    data = response.json()
+    assert data["filename"] == "sample_housing.csv"
+    assert data["summary"]["row_count"] == 120
+    assert "price" in data["summary"]["statistics"]
+
+
+def test_regression_endpoint():
+    # 1. Load sample dataset
+    sample_res = client.post("/api/sample")
+    dataset_id = sample_res.json()["dataset_id"]
+
+    # 2. Run regression
+    reg_res = client.post(
+        "/api/regression",
+        json={"dataset_id": dataset_id, "target_column": "price"},
+    )
+    assert reg_res.status_code == 200
+    data = reg_res.json()
+    assert data["target_column"] == "price"
+    assert "r2" in data["metrics"]
+    assert "mae" in data["metrics"]
+    assert len(data["coefficients"]) == 3
+    assert len(data["chart_points"]) > 0
+
+
+def test_regression_not_found():
+    res = client.post(
+        "/api/regression",
+        json={"dataset_id": "non-existent-id", "target_column": "price"},
+    )
+    assert res.status_code == 404
+
+
+def test_report_download():
+    # 1. Load sample and run regression
+    sample_res = client.post("/api/sample")
+    dataset_id = sample_res.json()["dataset_id"]
+    client.post(
+        "/api/regression",
+        json={"dataset_id": dataset_id, "target_column": "price"},
+    )
+
+    # 2. Fetch report
+    rep_res = client.get(f"/api/report/{dataset_id}")
+    assert rep_res.status_code == 200
+    assert "text/markdown" in rep_res.headers["content-type"]
+    assert "Linear Regression Results" in rep_res.text
+    assert "sample_housing.csv" in rep_res.text

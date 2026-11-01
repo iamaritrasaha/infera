@@ -1,64 +1,153 @@
-# Learning Infera
+# Infera Learning Guide
 
-Start with **`infera/main.py`, function `upload_csv_file`**. Read its inputs and returned `UploadResponse`, then follow the calls you encounter.
+Welcome to Infera! This codebase is built to teach Python, pandas, FastAPI, and machine learning by reading and modifying clean, working code.
 
-## Study order
+There are no confusing abstract layers, enterprise patterns, or hidden magic. Everything is plain functions, familiar standard libraries, and readable control flow.
 
-1. Functions, parameters, return values, conditions, loops and exceptions.
-2. Lists, dictionaries, tuples, `None` and comprehensions.
-3. Imports, packages, virtual environments and type hints.
-4. pandas DataFrames/Series, column selection, missing data and aggregation.
-5. Pydantic models and FastAPI route decorators.
-6. Train/test splitting, leakage, scikit-learn pipelines and evaluation metrics.
+---
 
-## Important files
+## 1. The Architecture at a Glance
 
-| File | Responsibility |
-| --- | --- |
-| `infera/main.py` | Routes, local-access checks, bounded dictionaries and ownership |
-| `infera/models.py` | Input/output schemas; JSON `schema` aliases Python `dataset_schema` |
-| `infera/data_loader.py` | File parsing, validation, schema inference, previews and quality |
-| `infera/analysis.py` | Calls calculations in order and assembles the response |
-| `infera/statistics.py` | Numerical/categorical summaries and histogram bins |
-| `infera/correlation.py` | Complete-pair Pearson/Spearman coefficients and p-values |
-| `infera/regression.py` | Numeric predictors, train-only preprocessing, CV selection and holdout errors |
-| `infera/exploration.py` | Filters, group comparisons, time aggregation and relationships |
-| `infera/reporting.py` | Markdown evidence and escaped HTML |
-| `frontend/lib/api.ts` | Requests, errors, ownership headers and downloads |
-| `frontend/lib/response-schemas.ts` | Runtime validation before charts render |
-| `frontend/components/DatasetWorkspace.tsx` | Select/upload data and launch analysis |
-| `frontend/components/AnalysisView.tsx` | Tabs, reruns, focus and saved snapshots |
+```text
+infera/
+    __init__.py    # Package version
+    main.py        # FastAPI web routes and request handling (~200 lines)
+    analysis.py    # pandas CSV parsing, descriptive stats, correlations, report (~225 lines)
+    ml.py          # scikit-learn Linear Regression with proper train/test split (~130 lines)
 
-## Trace a CSV request
+frontend/
+    app/
+        page.tsx   # Single main analysis page
+        layout.tsx # Dark mode root layout with Navbar & Footer
+    components/
+        Upload.tsx # Drag-and-drop CSV upload and Sample loader
+        Results.tsx# KPI cards, data tables, correlations, regression studio & SVG chart
+        Navbar.tsx # Brand and live engine health indicator
+        Footer.tsx # Simple footer
+    lib/
+        api.ts     # Direct fetch functions and TypeScript types
 
-1. Select a CSV. Local preview is an estimate; the backend validates the full file.
-2. `uploadDatasetFile` builds `FormData` containing `file` and sends `POST /api/upload`.
-3. `upload_csv_file` reads at most the limit plus one byte, then calls `load_dataset` and `load_csv`.
-4. `load_csv` validates UTF-8, header names, row widths, shape and finite numbers, returning a DataFrame.
-5. `store_dataset` saves it under a UUID. `UploadResponse` includes schema and JSON-safe preview rows.
-6. Select a target and launch. `executeFullAnalysis` sends UUID, target/focus to `POST /api/analyze`.
-7. `analyze_dataset` checks ownership, takes the analysis lock and calls `run_full_analysis`.
-8. The coordinator computes quality, statistics, correlations and optional regression. The plan explains skipped analyses.
-9. Regression splits first. Pipeline means/scales fit only training rows. CV refits the whole pipeline in each fold. Training CV chooses the model; holdout metrics measure unseen performance.
-10. Reporting builds Markdown and escaped HTML. The endpoint validates/caches the result and sends JSON.
-11. Zod checks fields, then React displays charts. Downloads use `/api/results/{id}/report?format=markdown` or `html`.
+tests/
+    test_analysis.py # Unit tests for parsing, statistics, correlations, and ML
+    test_api.py      # HTTP route tests using FastAPI TestClient
+```
 
-Follow functions, not fixed line numbers. Entirely missing numerical summaries use `None`/JSON `null`, not fabricated zeros. Sample variance/std use pandas' `ddof=1`; skewness/excess kurtosis use SciPy's default moment estimators. P-values do not prove causation. README.md describes model assumptions and removed capabilities.
+---
 
-## Windows debugging
+## 2. The Data Journey: From CSV to Screen
 
-Use README.md for setup and two-terminal startup. uv creates `.venv` and runs its interpreter without activation.
+### Step 1: Python Execution Starts
+Execution begins in [`infera/main.py`](infera/main.py):
+```bash
+uv run uvicorn infera.main:app --reload
+```
+FastAPI creates the `app` instance, configures CORS middleware, and exposes HTTP endpoints:
+- `GET /api/health` — Checks that the backend engine is running.
+- `POST /api/upload` — Receives and analyzes an uploaded CSV file.
+- `POST /api/sample` — Creates a built-in 120-row sample housing dataset for instant testing.
+- `POST /api/regression` — Fits an ordinary least-squares Linear Regression model.
+- `GET /api/report/{dataset_id}` — Returns a downloadable Markdown summary report.
 
-Open `D:\Development\infera` in VS Code. Install Microsoft's Python and Python Debugger extensions. Select `.venv\Scripts\python.exe` with **Python: Select Interpreter**, then choose **Debug Infera API** in Run and Debug. The included launch configuration starts Uvicorn without reload so breakpoints stay attached. Start the frontend separately.
+### Step 2: FastAPI Receives the Uploaded File
+In [`infera/main.py`](infera/main.py):
+```python
+@app.post("/api/upload")
+async def upload_csv(file: UploadFile = File(...)):
+    filename = file.filename or "uploaded.csv"
+    if not filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV files (.csv) are supported.")
 
-Break in `upload_csv_file`; upload a tiny CSV; step into `load_dataset`. Inspect `filename`, `content`, `df.shape` and `df.head()`. Break in `run_full_analysis` and inspect `schema_dict`, `target_column` and `modeling_result`. In `train_and_evaluate_single_model`, compare train/test indices and inspect the fitted imputer under `pipeline.steps`.
+    content = await file.read()
+    df = read_csv(content, filename=filename)
+    summary = compute_summary(df)
+    correlations = compute_correlations(df)
+    dataset_id = _save_dataset(filename, df, summary, correlations)
+    return {
+        "dataset_id": dataset_id,
+        "filename": filename,
+        "summary": summary,
+        "correlations": correlations,
+    }
+```
+`file: UploadFile` is an asynchronous file stream. FastAPI validates the file boundary and `await file.read()` extracts the raw bytes in memory.
 
-Run one test with `uv run pytest tests/test_audit_regressions.py -k preprocessing -v`. README.md lists full lint/type/build/browser checks. Investigate failed assertions instead of deleting them.
+### Step 3: pandas Reads and Analyzes the DataFrame
+In [`infera/analysis.py`](infera/analysis.py):
+1. **Reading CSV**:
+   `io.BytesIO(file_bytes)` turns raw bytes into an in-memory stream, and `pd.read_csv()` parses it into a pandas `DataFrame`. We check that the dataset is non-empty, has at least 1 row, and does not exceed safety caps (100,000 rows, 100 columns).
+2. **Computing Summary & Statistics**:
+   `compute_summary(df)` iterates through the DataFrame columns:
+   - For every column, it tracks data type (`series.dtype`), missing counts (`series.isna().sum()`), and unique count (`series.nunique()`).
+   - For numeric columns, it calls `series.describe()` to get standard statistics: `count`, `mean`, `std`, `min`, `25%` (Q1), `50%` (median), `75%` (Q3), and `max`.
+   - It captures the first 10 rows (`df.head(10)`) for preview in the UI.
+3. **Computing Pearson Correlations**:
+   `compute_correlations(df)` isolates columns where `pd.api.types.is_numeric_dtype` is true. It runs `df[numeric_cols].corr(method="pearson")` to get pairwise linear correlation coefficients ranging from -1.0 (strong negative) to +1.0 (strong positive).
 
-## Five exercises (without solutions)
+### Step 4: How Linear Regression Works in Infera
+In [`infera/ml.py`](infera/ml.py):
+When the user clicks **Train Model** on a target column (e.g. `price`):
+1. **Target and Feature Selection**:
+   The chosen target column $y$ is isolated, and all other numeric columns become the feature matrix $X$.
+2. **Train/Test Split (80% / 20%)**:
+   ```python
+   X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+   ```
+   **Why this matters**: Evaluating a machine learning model on the same data it was trained on gives overly optimistic, dishonest results. An 80/20 train/test split reserves 20% of the data to test generalization.
+3. **Imputation Without Data Leakage**:
+   ```python
+   imputer = SimpleImputer(strategy="mean")
+   X_train_imp = imputer.fit_transform(X_train)
+   X_test_imp = imputer.transform(X_test)
+   ```
+   Notice that `fit_transform` is called **only on `X_train`**. The test set is only transformed using the training means. The model never peeks at test statistics!
+4. **Fitting the Model**:
+   `LinearRegression().fit(X_train_imp, y_train)` calculates the Ordinary Least Squares line:
+   $$y = \beta_0 + \beta_1 X_1 + \beta_2 X_2 + \dots + \beta_k X_k$$
+5. **Evaluation Metrics**:
+   We predict on `X_test_imp` and calculate:
+   - **$R^2$ Score**: Proportion of variance in the target explained by the features ($1.0$ is perfect).
+   - **MAE (Mean Absolute Error)**: Average dollar or unit difference between predicted and actual values.
+   - **RMSE (Root Mean Squared Error)**: Standard deviation of residuals; gives heavier weight to large errors.
+6. **Feature Coefficients & Chart Points**:
+   The weights $\beta_i$ are extracted for each feature and sorted by absolute magnitude. Up to 50 test sample points (actual vs. predicted) are returned for plotting.
 
-1. Add a numeric range metric. Handle an entirely missing column and test positive, negative, constant and missing inputs. Trace the Python schema through Zod and the UI.
-2. Add a mostly-missing flag to upload summaries. Document the threshold and test immediately below, at and above it.
-3. Add a one-column statistics endpoint. Validate ownership and column names; test numeric, categorical, unknown and evicted datasets.
-4. Add a DummyRegressor baseline. Explain its use, keep holdout data out of selection, and test errors on known data.
-5. Add an explicit clear-dataset action. Remove report/owner records too. Test that another browser session cannot clear someone else's data.
+### Step 5: How Results Reach React
+1. FastAPI serializes the dictionaries into a clean JSON response.
+2. In `frontend/lib/api.ts`, `uploadCSV()` or `runLinearRegression()` uses standard browser `fetch()` to call the backend.
+3. In `frontend/app/page.tsx`, React state holds the data:
+   `const [dataset, setDataset] = useState<DatasetResponse | null>(null);`
+4. When `dataset` is set, `Results.tsx` renders:
+   - Metric cards (rows, columns, nulls, correlation pairs).
+   - Data preview table and descriptive statistics table.
+   - Pearson correlation ranking and correlation matrix heatmap.
+   - Linear Regression studio with metrics, feature weight bars, and an inline SVG scatter plot showing the ideal $y=x$ reference line.
+   - A single-click **Download Report (.md)** button calling `/api/report/{dataset_id}`.
+
+---
+
+## 3. Five Exercises You Can Build Independently
+
+Here are five practical learning exercises to practice modifying this codebase yourself:
+
+### Exercise 1: Add Spearman Rank Correlation
+- **Goal**: Allow users to see Spearman correlation (which detects monotonic relationships) alongside Pearson (which detects linear relationships).
+- **Where to edit**: In [`infera/analysis.py`](infera/analysis.py), modify `compute_correlations(df, method="pearson")` to accept `method`. In [`infera/main.py`](infera/main.py), accept an optional `?method=spearman` query parameter.
+
+### Exercise 2: Add Median Absolute Error (MedAE)
+- **Goal**: Compare MAE with MedAE, which is more robust to extreme target outliers.
+- **Where to edit**: In [`infera/ml.py`](infera/ml.py), import `median_absolute_error` from `sklearn.metrics`. Add `"medae": round(float(median_absolute_error(y_test, y_test_pred)), 4)` to the `metrics` dictionary. Then display it in [`frontend/components/Results.tsx`](frontend/components/Results.tsx).
+
+### Exercise 3: Add a Custom Train/Test Split Slider
+- **Goal**: Let users choose the split ratio (e.g. 70/30, 80/20, or 90/10) from the UI.
+- **Where to edit**:
+  1. In `infera/main.py`, add `test_size: float = 0.2` to `RegressionRequest`.
+  2. In `infera/ml.py`, pass `test_size` into `train_test_split()`.
+  3. In `frontend/components/Results.tsx`, add a simple slider or radio buttons for test size!
+
+### Exercise 4: Show Top Categories for Categorical Columns
+- **Goal**: For non-numeric text columns, display the 3 most frequent categories and their counts.
+- **Where to edit**: In [`infera/analysis.py`](infera/analysis.py#L51), within `compute_summary()`, if `not is_num`, compute `series.value_counts().head(3).to_dict()` and include it in `columns_info`. Display it in `Results.tsx`.
+
+### Exercise 5: Add Ridge Regression (L2 Regularization)
+- **Goal**: See how L2 regularization shrinks coefficients when features are collinear.
+- **Where to edit**: In [`infera/ml.py`](infera/ml.py), import `Ridge` from `sklearn.linear_model`. Add a parameter `model_type: str = "linear"`. If `"ridge"`, fit `Ridge(alpha=1.0)`. Compare how the feature weights change!
