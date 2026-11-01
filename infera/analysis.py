@@ -1,412 +1,247 @@
-"""Master analysis coordinator.
+"""Data analysis utilities for Infera.
 
-This module connects all analytical steps into a cohesive pipeline:
-1. Schema & Quality Profiling (data_loader.py)
-2. Descriptive Statistics (statistics.py)
-3. Correlations (correlation.py)
-4. Predictive Modeling / Regression (regression.py)
-5. Exploratory Insights & Discovery (exploration.py)
-6. Executive Report Generation (reporting.py)
+Provides functions to:
+1. Safely read uploaded CSV data into a pandas DataFrame.
+2. Compute dataset summary and descriptive statistics.
+3. Compute Pearson correlations between numeric columns.
+4. Generate a simple Markdown summary report.
 """
 
+from __future__ import annotations
+
+import io
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
-from infera.correlation import compute_correlations
-from infera.data_loader import (
-    calculate_health_score,
-    compute_quality_profile,
-    get_dataset_schema,
-    preview_records,
-)
-from infera.exploration import explore_dataframe
-from infera.models import ExploreRequest
-from infera.regression import train_regression_models
-from infera.reporting import generate_html_report, generate_markdown_report
-from infera.statistics import compute_descriptive_statistics
-
-SKIPPED_CAPABILITIES = [
-    {
-        "name": name,
-        "category": "analysis",
-        "reason": "Removed by the beginner refactor; not implemented in this version.",
-    }
-    for name in (
-        "Classification",
-        "Clustering",
-        "PCA",
-        "Stationarity tests",
-        "Hypothesis tests",
-    )
-]
+# Upload constraints
+MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024  # 20 MB
+MAX_ROWS = 100_000
+MAX_COLUMNS = 100
 
 
-def _detect_problem(
-    df: pd.DataFrame, user_target: str | None, schema: dict[str, Any]
-) -> tuple[str | None, str, dict[str, Any]]:
-    """Determine predictive problem type and target column."""
-    target = user_target
-    if not target and schema["potential_targets"]:
-        target = schema["potential_targets"][0]["column"]
+def read_csv(file_bytes: bytes, filename: str = "data.csv") -> pd.DataFrame:
+    """Read CSV file bytes into a pandas DataFrame with safety checks."""
+    if len(file_bytes) == 0:
+        raise ValueError("The uploaded CSV file is empty.")
 
-    problem_type = "exploratory"
-    if target and target in df.columns:
-        if pd.api.types.is_numeric_dtype(df[target]) and df[target].nunique() > 2:
-            problem_type = "regression"
-        else:
-            problem_type = (
-                "binary_classification"
-                if df[target].nunique() == 2
-                else "multiclass_classification"
-            )
+    if len(file_bytes) > MAX_FILE_SIZE_BYTES:
+        raise ValueError(
+            f"File exceeds maximum allowed size of {MAX_FILE_SIZE_BYTES // (1024 * 1024)} MB."
+        )
 
-    details = (
-        {"unique_values": int(df[target].nunique())} if target and target in df.columns else {}
-    )
-    detection = {
-        "problem_type": problem_type,
-        "target_column": target,
-        "confidence": "high" if user_target else "moderate",
-        "reason": f"Target '{target}' is numeric with variance"
-        if problem_type == "regression"
-        else "Exploratory analysis without predictive target",
-        "target_details": details,
-        "alternative_targets": schema["potential_targets"],
-    }
-    return target, problem_type, detection
+    try:
+        df = pd.read_csv(io.BytesIO(file_bytes))
+    except Exception as exc:
+        raise ValueError(f"Could not parse CSV file: {exc}") from exc
+
+    if df.empty:
+        raise ValueError("The parsed CSV file contains no data rows.")
+
+    if len(df) > MAX_ROWS:
+        raise ValueError(f"Dataset has {len(df):,} rows, exceeding maximum limit of {MAX_ROWS:,}.")
+
+    if len(df.columns) > MAX_COLUMNS:
+        raise ValueError(
+            f"Dataset has {len(df.columns)} columns, exceeding maximum limit of {MAX_COLUMNS}."
+        )
+
+    # Clean whitespace from string column names
+    df.columns = [str(col).strip() for col in df.columns]
+
+    return df
 
 
-def _run_modeling_and_plan(
-    df: pd.DataFrame,
-    target_column: str | None,
-    problem_type: str,
-    feature_cols: list[str],
-) -> tuple[dict[str, Any] | None, dict[str, Any]]:
-    """Train regression models if applicable and compile the execution plan."""
-    modeling_result = None
-    can_run_ml = False
-    skipped = list(SKIPPED_CAPABILITIES)
+def compute_summary(df: pd.DataFrame) -> dict[str, Any]:
+    """Compute dataset overview, column metadata, and descriptive statistics."""
+    columns_info: list[dict[str, Any]] = []
+    numeric_cols: list[str] = []
 
-    if problem_type == "regression" and target_column:
-        features = [c for c in feature_cols if c != target_column]
-        if len(features) > 0 and len(df) >= 10:
-            try:
-                mod_res = train_regression_models(df, target_column, features)
-                modeling_result = mod_res.model_dump()
-                can_run_ml = True
-            except ValueError as err:
-                skipped.append({"name": "Regression", "category": "ml", "reason": str(err)})
+    for col in df.columns:
+        series = df[col]
+        is_num = bool(pd.api.types.is_numeric_dtype(series))
+        if is_num:
+            numeric_cols.append(col)
 
-    if (
-        problem_type == "regression"
-        and not can_run_ml
-        and not any(s["name"] == "Regression" for s in skipped)
-    ):
-        skipped.append(
+        columns_info.append(
             {
-                "name": "Regression",
-                "category": "ml",
-                "reason": "Insufficient sample size or predictors: requires at least 10 observed targets and a varying numeric predictor.",
+                "name": col,
+                "dtype": str(series.dtype),
+                "missing_count": int(series.isna().sum()),
+                "missing_pct": round(float(series.isna().mean() * 100), 2),
+                "unique_count": int(series.nunique(dropna=True)),
+                "is_numeric": is_num,
             }
         )
 
-    planned = [
-        {
-            "name": "Data Profiling",
-            "category": "profiling",
-            "description": "Audit data types, missing values, duplicates, and outliers",
-        },
-        {
-            "name": "Descriptive Statistics",
-            "category": "statistics",
-            "description": "Compute mean, median, IQR, skewness, and histograms",
-        },
-        {
-            "name": "Correlation Matrix",
-            "category": "correlation",
-            "description": "Compute Pearson and Spearman correlation pairs",
-        },
-    ]
-    if can_run_ml:
-        planned.append(
-            {
-                "name": "Regression Modeling",
-                "category": "ml",
-                "description": "Benchmark Linear Regression, Ridge, and Random Forest",
-            }
-        )
-
-    summary = f"Analyzed {len(df)} rows across {len(df.columns)} columns."
-    if can_run_ml:
-        summary += f" Trained regression models on '{target_column}'."
-
-    plan = {
-        "problem_type": problem_type,
-        "target_column": target_column,
-        "planned_analyses": planned,
-        "skipped_analyses": skipped,
-        "feature_columns": [c for c in feature_cols if c != target_column],
-        "can_run_ml": can_run_ml,
-        "summary": summary,
-    }
-    return modeling_result, plan
-
-
-def _build_insights_and_discovery(
-    df: pd.DataFrame,
-    dataset_id: str,
-    dataset_name: str,
-    health_score: int,
-    quality: Any,
-    correlations: Any,
-    modeling: dict[str, Any] | None,
-    focus: dict[str, Any],
-    clean_numeric: list[str],
-    schema: dict[str, Any],
-    target_column: str | None,
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Extract primary insights and compile discovery options for the frontend."""
-    insights: list[dict[str, Any]] = [
-        {
-            "id": "quality_insight",
-            "category": "data_quality",
-            "title": "Dataset Health & Quality",
-            "summary": f"Health score is {health_score}/100. {quality.missing.total_missing_cells} missing cells detected.",
-            "plain_english": quality.missing.recommendation,
-            "confidence": "high",
-            "evidence": {
-                "health_score": health_score,
-                "missing_cells": quality.missing.total_missing_cells,
-            },
-            "calculation_details": "Penalized based on proportion of missing values and duplicate rows.",
-        }
-    ]
-
-    if correlations.top_correlations:
-        top = correlations.top_correlations[0]
-        insights.append(
-            {
-                "id": "correlation_insight",
-                "category": "correlation",
-                "title": f"Strong Association: {top.feature_a} and {top.feature_b}",
-                "summary": top.plain_english,
-                "plain_english": top.plain_english,
-                "confidence": "high" if top.is_statistically_significant else "moderate",
-                "evidence": {"pearson_r": top.pearson_r, "p_value": top.pearson_p_value},
-                "calculation_details": f"Pearson correlation r = {top.pearson_r:.2f}.",
-            }
-        )
-
-    if modeling:
-        best_r2 = next(m["r2_test"] for m in modeling["models"] if m["is_best_model"])
-        insights.append(
-            {
-                "id": "modeling_insight",
-                "category": "machine_learning",
-                "title": f"Predictive Champion: {modeling['best_model_name']}",
-                "summary": modeling["insight"],
-                "plain_english": modeling["insight"],
-                "confidence": "high",
-                "evidence": {"best_model": modeling["best_model_name"], "r2": best_r2},
-                "calculation_details": "Evaluated with 20% holdout test split and 5-fold cross-validation.",
-            }
-        )
-
-    categorical_cols = schema["categorical_columns"]
-    datetime_cols = schema["datetime_columns"]
-
-    selected_focus = {
-        "metric_column": focus.get("metric_column")
-        or (clean_numeric[0] if clean_numeric else None),
-        "date_column": focus.get("date_column") or (datetime_cols[0] if datetime_cols else None),
-        "group_column": focus.get("group_column")
-        or (categorical_cols[0] if categorical_cols else None),
-        "question": focus.get("question", "automatic"),
-    }
-
-    important_cols = sorted(
-        clean_numeric, key=lambda c: c != (focus.get("metric_column") or target_column)
-    )[:3]
-    important_metrics = [
-        {"label": f"Typical {c}", "value": f"{df[c].mean():.2f}", "detail": f"Mean value of {c}"}
-        for c in important_cols
-    ]
-
-    key_findings = [
-        {
-            "id": f"finding_{idx}",
-            "category": {"correlation": "relationship", "machine_learning": "model"}.get(
-                item["category"], item["category"]
-            ),
-            "finding_type": "association" if item["category"] == "correlation" else "observed",
-            "title": item["title"],
-            "summary": item["summary"],
-            "interpretation": item["plain_english"],
-            "limitation": "Statistical models approximate patterns and do not prove underlying causation.",
-            "confidence": item["confidence"],
-            "evidence": item["evidence"],
-            "chart": None,
-        }
-        for idx, item in enumerate(insights)
-    ]
-
-    metric = focus.get("metric_column") or target_column or selected_focus["metric_column"]
-    for mode, col, cat in (
-        ("group", selected_focus["group_column"], "group"),
-        ("trend", selected_focus["date_column"], "time"),
-    ):
-        if not metric or metric not in clean_numeric or not col:
+    # Descriptive statistics for numeric columns
+    stats: dict[str, dict[str, float]] = {}
+    for col in numeric_cols:
+        series = df[col].dropna()
+        if len(series) == 0:
             continue
-        try:
-            req = ExploreRequest(
-                dataset_id=dataset_id,
-                mode=mode,
-                metric_column=metric,
-                group_column=col if mode == "group" else None,
-                time_column=col if mode == "trend" else None,
-            )
-            explored = explore_dataframe(df, req)
-        except ValueError:
-            continue
-        if explored.get("chart"):
-            title = (
-                f"Recorded {metric} differs across {col}"
-                if mode == "group"
-                else f"Recorded {metric} over {col}"
-            )
-            key_findings.insert(
-                0,
-                {
-                    "id": f"focus_{mode}",
-                    "category": cat,
-                    "finding_type": "observed",
-                    "title": title,
-                    "summary": explored["interpretation"],
-                    "interpretation": "Descriptive comparison of observed data.",
-                    "limitation": "Association does not establish causation; observations may be dependent.",
-                    "confidence": "exploratory",
-                    "evidence": {
-                        "metric_column": metric,
-                        "group_column": selected_focus["group_column"],
-                        "datetime_column": selected_focus["date_column"],
-                    },
-                    "chart": explored["chart"],
-                },
-            )
+        desc = series.describe()
+        stats[col] = {
+            "count": float(desc.get("count", 0)),
+            "mean": round(float(desc.get("mean", 0.0)), 4),
+            "std": round(float(desc.get("std", 0.0)), 4) if pd.notna(desc.get("std")) else 0.0,
+            "min": round(float(desc.get("min", 0.0)), 4),
+            "q25": round(float(desc.get("25%", 0.0)), 4),
+            "median": round(float(desc.get("50%", 0.0)), 4),
+            "q75": round(float(desc.get("75%", 0.0)), 4),
+            "max": round(float(desc.get("max", 0.0)), 4),
+        }
 
-    if selected_focus["question"] == "groups":
-        key_findings.sort(key=lambda f: f["category"] != "group")
-    key_findings = key_findings[:5]
+    # First 10 rows for table preview
+    preview_rows = df.head(10).replace({np.nan: None}).to_dict(orient="records")
 
-    questions = [
-        f"What factors most strongly predict {target_column}?"
-        if target_column
-        else "Which features have the strongest correlation?",
-        "Are there any data quality issues that should be addressed before modeling?",
+    return {
+        "row_count": int(len(df)),
+        "column_count": int(len(df.columns)),
+        "total_missing": int(df.isna().sum().sum()),
+        "columns": columns_info,
+        "numeric_columns": numeric_cols,
+        "statistics": stats,
+        "preview": preview_rows,
+    }
+
+
+def compute_correlations(df: pd.DataFrame) -> dict[str, Any]:
+    """Compute Pearson correlation matrix and sorted pairs for numeric columns."""
+    numeric_cols = [
+        col
+        for col in df.columns
+        if pd.api.types.is_numeric_dtype(df[col]) and df[col].nunique(dropna=True) > 1
     ]
-    if metric:
-        questions = [f"Which fields correlate with `{metric}`?"]
-        if selected_focus["group_column"]:
-            questions.append(f"How does `{metric}` vary across `{selected_focus['group_column']}`?")
-        if selected_focus["date_column"]:
-            questions.append(
-                f"How does `{metric}` evolve over the observed dates in `{selected_focus['date_column']}`?"
-            )
 
-    discovery = {
-        "dataset_overview": f"{dataset_name} contains {len(df):,} observations across {len(df.columns)} columns.",
-        "status": "ready",
-        "selected_focus": selected_focus,
-        "options": {
-            "metric_columns": clean_numeric,
-            "date_columns": datetime_cols,
-            "group_columns": categorical_cols,
+    if len(numeric_cols) < 2:
+        return {"pairs": [], "matrix": {"columns": [], "rows": []}}
+
+    corr_df = df[numeric_cols].corr(method="pearson")
+
+    # Extract distinct pairs
+    pairs: list[dict[str, Any]] = []
+    for i in range(len(numeric_cols)):
+        for j in range(i + 1, len(numeric_cols)):
+            col1 = numeric_cols[i]
+            col2 = numeric_cols[j]
+            val = corr_df.iloc[i, j]
+            if pd.notna(val):
+                pairs.append(
+                    {
+                        "col1": col1,
+                        "col2": col2,
+                        "correlation": round(float(val), 4),
+                        "abs_correlation": round(abs(float(val)), 4),
+                    }
+                )
+
+    pairs.sort(key=lambda p: p["abs_correlation"], reverse=True)
+
+    # Format 2D matrix for heatmap
+    matrix_rows: list[list[float]] = []
+    for row in corr_df.to_numpy():
+        matrix_rows.append([round(float(val), 4) if pd.notna(val) else 0.0 for val in row])
+
+    return {
+        "pairs": pairs,
+        "matrix": {
+            "columns": numeric_cols,
+            "rows": matrix_rows,
         },
-        "important_metrics": important_metrics,
-        "key_findings": key_findings,
-        "suggested_questions": questions,
-        "goal": focus.get("goal"),
     }
-    return insights, discovery
 
 
-def run_full_analysis(
-    df: pd.DataFrame,
-    dataset_name: str = "Dataset",
-    dataset_id: str = "custom",
-    user_target: str | None = None,
-    focus: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Execute the complete data science analysis pipeline on a DataFrame."""
-    # 1. Input Validation
-    if user_target and user_target not in df:
-        raise ValueError(f"Target column {user_target!r} does not exist.")
-    focus = focus or {}
-    for key in ("metric_column", "date_column", "group_column"):
-        if focus.get(key) and focus[key] not in df:
-            raise ValueError(f"Unknown {key}: {focus[key]}")
-
-    # 2. Schema & Quality Profiling
-    schema = get_dataset_schema(df)
-    quality = compute_quality_profile(df)
-    health = calculate_health_score(df)
-
-    # 3. Descriptive Statistics & Correlations
-    stats = compute_descriptive_statistics(
-        df,
-        numerical_columns=schema["numerical_columns"],
-        categorical_columns=schema["categorical_columns"],
-    )
-    clean_numeric = [
-        c
-        for c in schema["numerical_columns"]
-        if c not in schema["id_columns"] and c not in schema["constant_columns"]
+def generate_markdown_report(
+    filename: str,
+    summary: dict[str, Any],
+    correlations: dict[str, Any],
+    regression: dict[str, Any] | None = None,
+) -> str:
+    """Generate a clean, readable Markdown analysis report."""
+    lines: list[str] = [
+        f"# Infera Analysis Report: {filename}",
+        "",
+        "## 1. Dataset Overview",
+        f"- **File Name**: {filename}",
+        f"- **Total Rows**: {summary['row_count']:,}",
+        f"- **Total Columns**: {summary['column_count']}",
+        f"- **Total Missing Cells**: {summary['total_missing']:,}",
+        "",
+        "### Column Schema",
+        "| Column Name | Type | Missing Values | Missing % | Unique |",
+        "| :--- | :--- | :--- | :--- | :--- |",
     ]
-    correlations = compute_correlations(df, clean_numeric)
 
-    # 4. Target Selection & Machine Learning
-    target, problem_type, problem_detection = _detect_problem(df, user_target, schema)
-    modeling, plan = _run_modeling_and_plan(df, target, problem_type, clean_numeric)
+    for col in summary["columns"]:
+        lines.append(
+            f"| `{col['name']}` | `{col['dtype']}` | {col['missing_count']} | {col['missing_pct']}% | {col['unique_count']} |"
+        )
 
-    # 5. Insight Extraction & Discovery
-    insights, discovery = _build_insights_and_discovery(
-        df=df,
-        dataset_id=dataset_id,
-        dataset_name=dataset_name,
-        health_score=health,
-        quality=quality,
-        correlations=correlations,
-        modeling=modeling,
-        focus=focus,
-        clean_numeric=clean_numeric,
-        schema=schema,
-        target_column=target,
+    lines.extend(
+        [
+            "",
+            "## 2. Descriptive Statistics (Numeric Columns)",
+            "| Column | Mean | Std Dev | Min | Median | Max |",
+            "| :--- | :--- | :--- | :--- | :--- | :--- |",
+        ]
     )
 
-    # 6. Final Payload & Report Generation
-    payload: dict[str, Any] = {
-        "dataset_id": dataset_id,
-        "dataset_name": dataset_name,
-        "health_score": health,
-        "schema": schema,
-        "quality": quality.model_dump(),
-        "descriptive_statistics": stats.model_dump(),
-        "correlations": correlations.model_dump(),
-        "hypothesis_tests": [],
-        "problem_detection": problem_detection,
-        "plan": plan,
-        "modeling": modeling,
-        "clustering": None,
-        "pca": None,
-        "timeseries": None,
-        "insights": insights,
-        "insight_discovery": discovery,
-        "preview_rows": preview_records(df),
-    }
-    payload["reports"] = {
-        "markdown": generate_markdown_report(payload),
-        "html": generate_html_report(payload),
-    }
+    for col, stat in summary["statistics"].items():
+        lines.append(
+            f"| `{col}` | {stat['mean']} | {stat['std']} | {stat['min']} | {stat['median']} | {stat['max']} |"
+        )
 
-    return payload
+    lines.extend(
+        [
+            "",
+            "## 3. Top Pearson Correlations",
+        ]
+    )
+
+    pairs = correlations.get("pairs", [])
+    if pairs:
+        lines.extend(
+            [
+                "| Feature 1 | Feature 2 | Correlation |",
+                "| :--- | :--- | :--- |",
+            ]
+        )
+        for p in pairs[:10]:
+            lines.append(f"| `{p['col1']}` | `{p['col2']}` | {p['correlation']} |")
+    else:
+        lines.append("_Not enough numeric columns with variance to compute correlations._")
+
+    if regression:
+        metrics = regression["metrics"]
+        lines.extend(
+            [
+                "",
+                "## 4. Linear Regression Results",
+                f"- **Target Column**: `{regression['target_column']}`",
+                f"- **Training Samples**: {regression['train_samples']:,}",
+                f"- **Test Samples**: {regression['test_samples']:,}",
+                f"- **Test R²**: {metrics['r2']}",
+                f"- **Train R²**: {metrics['train_r2']}",
+                f"- **Mean Absolute Error (MAE)**: {metrics['mae']}",
+                f"- **Root Mean Squared Error (RMSE)**: {metrics['rmse']}",
+                f"- **Intercept**: {regression['intercept']}",
+                "",
+                "### Feature Coefficients",
+                "| Feature | Weight (Coefficient) |",
+                "| :--- | :--- |",
+            ]
+        )
+        for coef in regression["coefficients"]:
+            lines.append(f"| `{coef['feature']}` | {coef['weight']} |")
+
+    lines.extend(
+        [
+            "",
+            "---",
+            "_Generated by Infera · Beginner-Friendly Machine Learning Engine_",
+        ]
+    )
+
+    return "\n".join(lines)

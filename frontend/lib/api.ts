@@ -1,488 +1,152 @@
-/** Browser-to-FastAPI client. Anonymous ownership tokens never appear in URLs. */
-import { z } from "zod";
-import {
-  analysisSchema,
-  explorationOptionsSchema,
-  explorationSchema,
-  samplesSchema,
-  uploadSchema,
-} from "./response-schemas";
-import {
-  AnalysisFocus,
-  AnalysisResponse,
-  ExplorationOptions,
-  ExplorationResponse,
-  ExploreRequest,
-  SampleDatasetInfo,
-  UploadResponse,
-} from "./types";
+/**
+ * Infera API Client.
+ *
+ * Concise, direct HTTP client connecting the React frontend to the FastAPI engine.
+ */
 
-export class ApiError extends Error {
-  constructor(
-    message: string,
-    public readonly kind:
-      | "transient"
-      | "cold-start"
-      | "configuration"
-      | "incompatible"
-      | "deployment"
-      | "offline"
-      | "http"
-      | "network"
-      | "timeout"
-      | "aborted",
-    public readonly status?: number,
-    public readonly requestId?: string,
-  ) {
-    super(message);
-    this.name = "ApiError";
-  }
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+export interface ColumnInfo {
+  name: string;
+  dtype: string;
+  missing_count: number;
+  missing_pct: number;
+  unique_count: number;
+  is_numeric: boolean;
 }
 
-const HTTP_MESSAGES: Record<number, string> = {
-  400: "The request could not be processed. Check the file format or selected target.",
-  401: "Your analysis session is missing. Reload and try again.",
-  403: "This request is not authorized for your session.",
-  404: "This dataset or result is unavailable in your session or has expired. Please re-upload.",
-  413: "The upload is too large. Use a file under 15 MB.",
-  422: "The request contains invalid fields. Check the file and selected target.",
-  429: "The engine is processing another analysis. Wait a few moments, then retry.",
-};
+export interface ColumnStats {
+  count: number;
+  mean: number;
+  std: number;
+  min: number;
+  q25: number;
+  median: number;
+  q75: number;
+  max: number;
+}
 
-const COLD_START_REGEX =
-  /\b(?:service|instance|application|upstream)\b.{0,50}\b(?:starting|waking|spinning up)\b|\b(?:starting|waking|spinning up)\b.{0,50}\b(?:service|instance|application|upstream)\b/i;
+export interface DatasetSummary {
+  row_count: number;
+  column_count: number;
+  total_missing: number;
+  columns: ColumnInfo[];
+  numeric_columns: string[];
+  statistics: Record<string, ColumnStats>;
+  preview: Record<string, unknown>[];
+}
 
-const UNKNOWN_NETWORK_FAILURE =
-  "The browser could not complete the request, and it did not expose the cause. This is an unknown browser/network failure, not proof that the backend is starting. Check your network or VPN, open the backend health link, then retry.";
+export interface CorrelationPair {
+  col1: string;
+  col2: string;
+  correlation: number;
+  abs_correlation: number;
+}
 
-export function apiBase(): string {
-  const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
-  const localBrowser =
-    typeof window !== "undefined" &&
-    ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname);
-  const raw = configured || (process.env.NODE_ENV === "development" ? "http://localhost:8000" : "");
-  if (!raw) {
-    throw new ApiError(
-      "The analysis engine URL is not configured. Set NEXT_PUBLIC_API_URL to the deployed FastAPI service and rebuild the frontend.",
-      "configuration",
-    );
-  }
+export interface CorrelationData {
+  pairs: CorrelationPair[];
+  matrix: {
+    columns: string[];
+    rows: number[][];
+  };
+}
 
-  let url: URL;
+export interface DatasetResponse {
+  dataset_id: string;
+  filename: string;
+  summary: DatasetSummary;
+  correlations: CorrelationData;
+}
+
+export interface RegressionMetrics {
+  r2: number;
+  train_r2: number;
+  mae: number;
+  rmse: number;
+  mse: number;
+}
+
+export interface Coefficient {
+  feature: string;
+  weight: number;
+}
+
+export interface ChartPoint {
+  actual: number;
+  predicted: number;
+}
+
+export interface RegressionResponse {
+  target_column: string;
+  feature_columns: string[];
+  train_samples: number;
+  test_samples: number;
+  metrics: RegressionMetrics;
+  coefficients: Coefficient[];
+  intercept: number;
+  chart_points: ChartPoint[];
+}
+
+export async function checkEngineHealth(): Promise<boolean> {
   try {
-    url = new URL(raw);
+    const res = await fetch(`${API_BASE}/api/health`, { method: "GET" });
+    return res.ok;
   } catch {
-    throw new ApiError("The analysis engine URL is invalid. Check NEXT_PUBLIC_API_URL.", "configuration");
-  }
-
-  if (
-    !["http:", "https:"].includes(url.protocol) ||
-    url.username ||
-    url.password ||
-    url.search ||
-    url.hash ||
-    url.pathname !== "/"
-  ) {
-    throw new ApiError(
-      "The analysis engine URL must be an HTTP(S) origin without credentials, query parameters, or a path.",
-      "configuration",
-    );
-  }
-
-  if (
-    typeof window !== "undefined" &&
-    !localBrowser &&
-    (url.protocol !== "https:" || ["localhost", "127.0.0.1", "[::1]", "0.0.0.0"].includes(url.hostname))
-  ) {
-    throw new ApiError("The deployed frontend requires a public HTTPS analysis engine URL.", "configuration");
-  }
-
-  return url.origin;
-}
-
-function sessionToken(): string {
-  try {
-    let token = sessionStorage.getItem("infera-session");
-    if (!token) {
-      token = Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) =>
-        b.toString(16).padStart(2, "0"),
-      ).join("");
-      sessionStorage.setItem("infera-session", token);
-    }
-    return token;
-  } catch {
-    throw new Error(
-      "Browser session storage is unavailable. Enable it to upload and access your datasets privately.",
-    );
+    return false;
   }
 }
 
-export function connectionTimestamp(): number {
-  return typeof performance !== "undefined"
-    ? performance.timeOrigin + performance.now()
-    : Date.now();
-}
-
-export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "The request could not be completed. Please try again.";
-}
-
-export function apiHealthUrl(): string | null {
-  try {
-    return `${apiBase()}/health`;
-  } catch {
-    return null;
-  }
-}
-
-function endpointLabel(responseUrl: string): string {
-  try {
-    const pathname = new URL(responseUrl).pathname;
-    if (pathname.startsWith("/api/results/")) return "/api/results";
-    if (pathname.startsWith("/api/samples/")) return "/api/samples/:id/load";
-    return pathname;
-  } catch {
-    return "API response";
-  }
-}
-
-function announceApiSuccess(response: Response) {
-  if (typeof window === "undefined" || !response.url) return;
-  const startedAt = (response as Response & { inferaRequestStartedAt?: number }).inferaRequestStartedAt;
-  window.dispatchEvent(
-    new CustomEvent("infera:api-success", {
-      detail: {
-        endpoint: endpointLabel(response.url),
-        status: response.status,
-        requestId: response.headers.get("x-request-id") ?? undefined,
-        requestStartedAt: startedAt ?? Date.now(),
-      },
-    }),
-  );
-}
-
-function parseHttpError(status: number, path: string, bodyText: string, requestId?: string): ApiError {
-  let detail: string | null = null;
-  try {
-    const jsonBody = JSON.parse(bodyText);
-    if (typeof jsonBody.detail === "string" && jsonBody.detail.length <= 400) {
-      if (!/traceback|stack trace|File \"|Error:/i.test(jsonBody.detail)) {
-        detail = jsonBody.detail;
-      }
-    }
-  } catch {
-    /* Non-JSON response body */
-  }
-
-  if (status >= 500) {
-    const isRetryable = [502, 503, 504].includes(status);
-    const textToCheck = detail || bodyText;
-    const isColdStart = status === 503 && COLD_START_REGEX.test(textToCheck);
-    if (isColdStart) {
-      return new ApiError(
-        `The backend explicitly reports that it is starting (HTTP ${status}). Infera will retry within its bounded connection window.`,
-        "cold-start",
-        status,
-        requestId,
-      );
-    }
-    if (isRetryable) {
-      return new ApiError(
-        `The backend returned HTTP ${status}. Its response does not identify whether this is a cold start or another upstream problem.`,
-        "transient",
-        status,
-        requestId,
-      );
-    }
-    return new ApiError(
-      `The analysis service returned HTTP ${status}. Retry, and check backend logs if the error continues.`,
-      "http",
-      status,
-      requestId,
-    );
-  }
-
-  if (path === "/health" && status === 404) {
-    return new ApiError(
-      "The configured backend does not provide the expected /health endpoint. Check the Render service and health-check path.",
-      "deployment",
-      status,
-      requestId,
-    );
-  }
-
-  return new ApiError(
-    detail || HTTP_MESSAGES[status] || `The request failed (HTTP ${status}). Please retry.`,
-    "http",
-    status,
-    requestId,
-  );
-}
-
-async function request(
-  path: string,
-  init: RequestInit = {},
-  owned = false,
-  timeoutMs = 125000,
-  signal?: AbortSignal,
-): Promise<Response> {
-  if (signal?.aborted) {
-    throw new ApiError("The request was cancelled before it started.", "aborted");
-  }
-  if (typeof navigator !== "undefined" && navigator.onLine === false) {
-    throw new ApiError("Your browser appears to be offline. Check your network connection.", "offline");
-  }
-
-  const base = apiBase();
-  const headers = new Headers(init.headers);
-  if (owned) headers.set("X-Infera-Session", sessionToken());
-
-  const controller = new AbortController();
-  let timedOut = false;
-  const abortCaller = () => controller.abort(signal?.reason);
-  signal?.addEventListener("abort", abortCaller, { once: true });
-  if (signal?.aborted) abortCaller();
-
-  const timeout = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, timeoutMs);
-
-  const requestStartedAt = connectionTimestamp();
-  try {
-    const response = await fetch(`${base}${path}`, {
-      ...init,
-      headers,
-      signal: controller.signal,
-      cache: "no-store",
-      credentials: "omit",
-    });
-
-    if (!response.ok) {
-      let bodyText = "";
-      try {
-        bodyText = (await response.text()).slice(0, 1200);
-      } catch {
-        /* Read failure */
-      }
-      const reqId = response.headers.get("x-request-id") ?? undefined;
-      throw parseHttpError(response.status, path, bodyText, reqId);
-    }
-
-    const body = await response.blob();
-    const copied = new Response(body, { status: response.status, headers: response.headers });
-    Object.defineProperty(copied, "url", { value: response.url });
-    Object.defineProperty(copied, "inferaRequestStartedAt", { value: requestStartedAt });
-    return copied;
-  } catch (error) {
-    if (signal?.aborted) {
-      throw new ApiError("The request was cancelled before it completed.", "aborted");
-    }
-    if (timedOut) {
-      const msg =
-        path === "/api/analyze"
-          ? "Analysis took longer than expected. The server may still be computing. Retry to retrieve the cached result."
-          : `The health/API request timed out after ${Math.ceil(timeoutMs / 1000)} seconds. The browser cannot tell whether the service is waking or the request path is blocked. Check your network and the backend health link, then retry.`;
-      throw new ApiError(msg, "timeout");
-    }
-    if (error instanceof ApiError) throw error;
-    if (controller.signal.aborted) {
-      throw new ApiError("The request was aborted before a response arrived.", "aborted");
-    }
-    throw new ApiError(UNKNOWN_NETWORK_FAILURE, "network");
-  } finally {
-    clearTimeout(timeout);
-    signal?.removeEventListener("abort", abortCaller);
-  }
-}
-
-async function json<T>(response: Response, schema: z.ZodType<T>): Promise<T> {
-  let payload: unknown;
-  try {
-    payload = await response.json();
-  } catch {
-    throw new ApiError(
-      "The backend responded, but its health or analysis response does not match this frontend version (incompatible). Deploy compatible frontend and backend revisions.",
-      "incompatible",
-      response.status,
-      response.headers.get("x-request-id") ?? undefined,
-    );
-  }
-
-  let parsed: T;
-  try {
-    parsed = schema.parse(payload);
-  } catch {
-    throw new ApiError(
-      "The backend responded, but its health or analysis response does not match this frontend version (incompatible). Deploy compatible frontend and backend revisions.",
-      "incompatible",
-      response.status,
-      response.headers.get("x-request-id") ?? undefined,
-    );
-  }
-
-  try {
-    if (new URL(response.url).pathname !== "/health") announceApiSuccess(response);
-  } catch {
-    /* Opaque URLs */
-  }
-  return parsed;
-}
-
-export async function fetchHealth(signal?: AbortSignal, timeoutMs = 45000) {
-  const response = await request("/health", {}, false, timeoutMs, signal);
-  const health = await json(
-    response,
-    z.object({
-      status: z.union([z.literal("ok"), z.literal("degraded")]),
-      project: z.literal("Infera"),
-      version: z.string(),
-      engine_status: z.string().optional(),
-      timestamp: z.number().optional(),
-    }),
-  );
-  return { ...health, requestId: response.headers.get("x-request-id") ?? undefined };
-}
-
-export async function fetchDiagnostics() {
-  const response = await request("/api/diagnostic", {}, false, 15000);
-  const diagnostics = await json(
-    response,
-    z.object({
-      status: z.literal("ok"),
-      project: z.literal("Infera"),
-      version: z.string(),
-      uptime_seconds: z.number(),
-      memory_mb: z.number().nullable().optional(),
-      python_version: z.string(),
-      max_concurrent_analyses: z.number(),
-      environment: z.string(),
-    }),
-  );
-  return { ...diagnostics, requestId: response.headers.get("x-request-id") ?? undefined };
-}
-
-export async function fetchSamples(): Promise<SampleDatasetInfo[]> {
-  return json(await request("/api/samples"), samplesSchema);
-}
-
-export async function loadSampleDataset(sampleId: string): Promise<UploadResponse> {
-  return json(
-    await request(`/api/samples/${encodeURIComponent(sampleId)}/load`, { method: "POST" }, true),
-    uploadSchema,
-  );
-}
-
-export async function uploadDatasetFile(file: File): Promise<UploadResponse> {
-  if (!/\.(csv|xlsx|json|parquet)$/i.test(file.name)) {
-    throw new Error("Unsupported file format. Use CSV, XLSX, JSON, or Parquet.");
-  }
-  if (!file.size) throw new Error("The selected file is empty.");
-  if (file.size > 15 * 1024 * 1024) {
-    throw new Error("The upload is too large. Use a file under 15 MB.");
-  }
+export async function uploadCSV(file: File): Promise<DatasetResponse> {
   const formData = new FormData();
   formData.append("file", file);
-  return json(await request("/api/upload", { method: "POST", body: formData }, true), uploadSchema);
-}
 
-export async function executeFullAnalysis(
-  datasetId: string,
-  targetColumn?: string,
-  focus: AnalysisFocus = { question: "automatic" },
-  goal?: string,
-): Promise<AnalysisResponse> {
-  return json(
-    await request(
-      "/api/analyze",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dataset_id: datasetId,
-          target_column: targetColumn || null,
-          metric_column: focus.metric_column || null,
-          date_column: focus.date_column || null,
-          group_column: focus.group_column || null,
-          question: focus.question,
-          goal: goal || null,
-        }),
-      },
-      true,
-      180000,
-    ),
-    analysisSchema,
-  ) as Promise<AnalysisResponse>;
-}
+  const res = await fetch(`${API_BASE}/api/upload`, {
+    method: "POST",
+    body: formData,
+  });
 
-export async function getExplorationOptions(
-  datasetId: string,
-  column: string,
-  signal?: AbortSignal,
-): Promise<ExplorationOptions> {
-  return json(
-    await request(
-      "/api/explore/options",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dataset_id: datasetId, column }),
-      },
-      true,
-      30000,
-      signal,
-    ),
-    explorationOptionsSchema,
-  );
-}
-
-export async function runExploration(
-  payload: ExploreRequest,
-  signal?: AbortSignal,
-): Promise<ExplorationResponse> {
-  return json(
-    await request(
-      "/api/explore",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      },
-      true,
-      30000,
-      signal,
-    ),
-    explorationSchema,
-  );
-}
-
-export async function fetchAnalysisResults(datasetId: string): Promise<AnalysisResponse> {
-  return json(
-    await request(`/api/results/${encodeURIComponent(datasetId)}`, {}, true),
-    analysisSchema,
-  ) as Promise<AnalysisResponse>;
-}
-
-export async function downloadReport(datasetId: string, format: "markdown" | "html"): Promise<void> {
-  const response = await request(
-    `/api/results/${encodeURIComponent(datasetId)}/report?format=${format}`,
-    {},
-    true,
-  );
-  const expected = format === "html" ? "text/html" : "text/markdown";
-  if (!response.headers.get("content-type")?.includes(expected)) {
-    throw new Error("The engine returned an invalid report. Please retry.");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Upload failed." }));
+    throw new Error(err.detail || `Upload failed with status ${res.status}`);
   }
-  announceApiSuccess(response);
-  const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download =
-    response.headers.get("content-disposition")?.match(/filename="([^"]+)"/)?.[1] ||
-    `infera-report.${format === "html" ? "html" : "md"}`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+  return res.json();
+}
+
+export async function loadSampleDataset(): Promise<DatasetResponse> {
+  const res = await fetch(`${API_BASE}/api/sample`, {
+    method: "POST",
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Failed to load sample dataset." }));
+    throw new Error(err.detail || `Failed to load sample with status ${res.status}`);
+  }
+
+  return res.json();
+}
+
+export async function runLinearRegression(
+  datasetId: string,
+  targetColumn: string,
+): Promise<RegressionResponse> {
+  const res = await fetch(`${API_BASE}/api/regression`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      dataset_id: datasetId,
+      target_column: targetColumn,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Regression failed." }));
+    throw new Error(err.detail || `Regression failed with status ${res.status}`);
+  }
+
+  return res.json();
+}
+
+export function getReportDownloadUrl(datasetId: string): string {
+  return `${API_BASE}/api/report/${encodeURIComponent(datasetId)}`;
 }
