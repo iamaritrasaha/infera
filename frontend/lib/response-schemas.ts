@@ -23,7 +23,7 @@ export const explorationOptionsSchema = z.object({
   minimum: n.nullable(), maximum: n.nullable(), start: s.nullable(), end: s.nullable(), truncated: z.boolean(),
   observation_count: n.nullable().optional(), span_days: n.nullable().optional(), median_interval_days: n.nullable().optional(),
 });
-const importance = z.object({ feature: s, importance: n, signed_coefficient: n.optional() });
+const importance = z.object({ feature: s, importance: n, signed_coefficient: n.nullable().optional() });
 const modelBase = { model_name: s, display_name: s, is_best_model: z.boolean(), feature_importances: z.array(importance) };
 const regression = z.object({ ...modelBase, r2_test: n, mae_test: n, mse_test: n, rmse_test: n, cv_r2_mean: n.nullable(), cv_r2_std: n.nullable(), predictions_vs_actual: z.array(z.object({ actual: n, predicted: n })), residuals: z.array(z.object({ predicted: n, residual: n })) });
 const classification = z.object({ ...modelBase, accuracy_test: n, precision_macro: n, recall_macro: n, f1_macro: n, f1_weighted: n, roc_auc: n.nullable(), cv_score_mean: n.nullable(), cv_score_std: n.nullable(), confusion_matrix: z.array(z.array(n)), confusion_matrix_labels: z.array(s) });
@@ -86,7 +86,7 @@ export const analysisSchema = z.object({
     cardinality: z.object({ constant_columns: z.array(s), quasi_constant_columns: z.array(s), high_cardinality_categorical_columns: z.array(s), recommendation: s }),
   }),
   descriptive_statistics: z.object({
-    numerical: z.array(z.object({ column: s, count: n, null_count: n, mean: n.nullable(), median: n.nullable(), std: n.nullable(), variance: n.nullable(), min: n, max: n, q25: n, q75: n, iqr: n, skewness: n.nullable(), skewness_interpretation: s, kurtosis: n.nullable(), kurtosis_interpretation: s, histogram: z.array(z.object({ bin_start: n, bin_end: n, count: n, label: s })) })),
+    numerical: z.array(z.object({ column: s, count: n, null_count: n, mean: n.nullable(), median: n.nullable(), std: n.nullable(), variance: n.nullable(), min: n.nullable(), max: n.nullable(), q25: n.nullable(), q75: n.nullable(), iqr: n.nullable(), skewness: n.nullable(), skewness_interpretation: s, kurtosis: n.nullable(), kurtosis_interpretation: s, histogram: z.array(z.object({ bin_start: n, bin_end: n, count: n, label: s })) })),
     categorical: z.array(z.object({ column: s, total_count: n, null_count: n, unique_count: n, mode: s, mode_frequency: n, mode_percentage: n, is_imbalanced: z.boolean(), frequencies: z.array(z.object({ category: s, count: n, percentage: n })) })),
   }),
   correlations: z.object({ columns: z.array(s), pearson_matrix: z.array(z.array(n.nullable())), spearman_matrix: z.array(z.array(n.nullable())), top_correlations: z.array(pair), notable_negative_correlations: z.array(pair) }),

@@ -1,0 +1,38 @@
+{
+  "date": "2026-11-01",
+  "workspace": "D:\\Development\\infera",
+  "python": "3.13.16",
+  "node": "26.13.0",
+  "pytest": {
+    "passed": 54,
+    "failed": 0,
+    "skipped": 0,
+    "warnings": 2
+  },
+  "browser": {
+    "startTime": "2026-11-01T04:28:42.624Z",
+    "duration": 82117.39600000001,
+    "expected": 58,
+    "skipped": 4,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "checks": {
+    "ruff_lint": "passed",
+    "ruff_format": "passed: 31 files",
+    "python_ty": "passed",
+    "frontend_eslint": "passed",
+    "frontend_typescript": "passed",
+    "next_production_build": "passed",
+    "native_uvicorn_http_smoke": "passed",
+    "npm_production_audit": "0 vulnerabilities",
+    "npm_full_audit": "16 moderate development-tool findings"
+  },
+  "unexecuted": [
+    "public deployment checks",
+    "remote GitHub CI",
+    "Docker deployment",
+    "VS Code debugger launch",
+    "historical deleted test suite"
+  ]
+}

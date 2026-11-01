@@ -7,7 +7,7 @@ interface FeatureImportanceProps {
   importances: {
     feature: string;
     importance: number;
-    signed_coefficient?: number;
+    signed_coefficient?: number | null;
   }[];
   title?: string;
 }

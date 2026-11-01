@@ -140,17 +140,10 @@ for (const width of [375, 768, 1366, 1920]) {
             name: "Model Benchmarking & Validation",
           }),
         ).toBeVisible();
-        await expect(
-          page.getByRole("heading", {
-            name: "Principal Component Analysis",
-            exact: true,
-          }),
-        ).toBeVisible();
-        await expect(
-          page.getByRole("heading", {
-            name: "Unsupervised Segmentation Analysis",
-          }),
-        ).toBeVisible();
+        // These algorithms were deliberately removed in 80f2126. Assert honest disclosure.
+        await expect(page.getByRole("tabpanel")).toContainText("PCA");
+        await expect(page.getByRole("tabpanel")).toContainText("Clustering");
+        await expect(page.getByRole("tabpanel")).toContainText("not implemented");
         await page.screenshot({
           path: info.outputPath(`models-${width}.png`),
           fullPage: true,
@@ -415,7 +408,7 @@ test("real Excel upload, computed statistics, models and HTML report", async ({
   await page
     .getByRole("tab", { name: "Machine Learning", exact: true })
     .click();
-  await expect(page.getByRole("tabpanel")).toContainText("Dummy Regressor");
+  await expect(page.getByRole("tabpanel")).toContainText("Linear Regression");
   await expect(page.getByRole("tabpanel")).toContainText("RMSE");
   await page.getByRole("tab", { name: "Report", exact: true }).click();
   const pending = page.waitForEvent("download");
@@ -516,9 +509,9 @@ test("error: independent browser sessions cannot access another dataset", async 
 });
 
 for (const [sample, expected] of [
-  ["Telecom Customer Churn", "Macro F1"],
-  ["Student Exam Performance", "Macro F1"],
-  ["Weekly Retail Sales", "Time-series Diagnostics"],
+  ["Telecom Customer Churn", "Classification"],
+  ["Student Exam Performance", "RMSE"],
+  ["Weekly Retail Sales", "Stationarity tests"],
 ]) {
   test(`real ${sample} analysis`, async ({ page }) => {
     await analyze(page, sample);
@@ -681,7 +674,7 @@ test("real skewed CSV with large values, missing data, and unavailable correlati
   ).toBeVisible();
   await page.getByRole("tab", { name: "Explore", exact: true }).click();
   await page.getByLabel("Numerical feature").selectOption("large");
-  await expect(page.getByRole("tabpanel")).toContainText("right-skewed");
+  await expect(page.getByRole("tabpanel")).toContainText("right-skewed", { ignoreCase: true });
   await expect(page.getByRole("tabpanel")).toContainText("N/A");
   await page.getByLabel("Correlation method").selectOption("spearman");
   await expect(

@@ -233,6 +233,8 @@ test("error: a validated API response clears a stale health endpoint failure", a
 });
 
 for (const width of [375, 768, 1366, 1920]) {
+  test.describe(`viewport ${width}`, () => {
+    test.use({ viewport: { width, height: 900 } });
   test(`redesigned public pages and preview at ${width}px`, async ({
     page,
   }, info) => {
@@ -241,7 +243,6 @@ for (const width of [375, 768, 1366, 1920]) {
     page.on("console", (m) => {
       if (m.type() === "error") errors.push(m.text());
     });
-    await page.setViewportSize({ width, height: 900 });
     for (const path of ["/", "/about", "/docs", "/dashboard"]) {
       await page.goto(path);
       await expect(
@@ -283,5 +284,6 @@ for (const width of [375, 768, 1366, 1920]) {
       page.getByRole("button", { name: "Upload dataset", exact: true }),
     ).toBeVisible();
     expect(errors).toEqual([]);
+  });
   });
 }

@@ -173,7 +173,7 @@ export function ExploreTab({ data, drilldown, onExplorationResultChange }: Explo
                 </span>
               </div>
               <p className="text-xs text-slate-300 leading-relaxed">
-                Evaluating group segmentation between categorical and numerical features. Inspect the Key Findings section for verified Mann-Whitney or ANOVA hypothesis tests.
+                Compare categorical and numerical features using the group explorer above. Formal hypothesis tests are not implemented in this version.
               </p>
             </div>
           )}
@@ -224,9 +224,9 @@ export function ExploreTab({ data, drilldown, onExplorationResultChange }: Explo
                 <div>Mean: <strong className="text-slate-200 font-mono">{currentNum.mean?.toLocaleString() ?? "Unavailable"}</strong></div>
                 <div>Median: <strong className="text-slate-200 font-mono">{currentNum.median?.toLocaleString() ?? "Unavailable"}</strong></div>
                 <div>Std Dev: <strong className="text-slate-200 font-mono">{currentNum.std?.toLocaleString() ?? "Unavailable"}</strong></div>
-                <div>IQR: <strong className="text-slate-200 font-mono">{currentNum.iqr.toLocaleString()}</strong></div>
-                <div>Min: <strong className="text-slate-200 font-mono">{currentNum.min.toLocaleString()}</strong></div>
-                <div>Max: <strong className="text-slate-200 font-mono">{currentNum.max.toLocaleString()}</strong></div>
+                <div>IQR: <strong className="text-slate-200 font-mono">{currentNum.iqr?.toLocaleString() ?? "Unavailable"}</strong></div>
+                <div>Min: <strong className="text-slate-200 font-mono">{currentNum.min?.toLocaleString() ?? "Unavailable"}</strong></div>
+                <div>Max: <strong className="text-slate-200 font-mono">{currentNum.max?.toLocaleString() ?? "Unavailable"}</strong></div>
                 <div>Skewness: <strong className="text-slate-200 font-mono">{currentNum.skewness ?? "Unavailable"}</strong></div>
                 <div>Kurtosis: <strong className="text-slate-200 font-mono">{currentNum.kurtosis ?? "Unavailable"}</strong></div>
               </div>

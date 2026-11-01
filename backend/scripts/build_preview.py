@@ -1,43 +1,41 @@
 """Regenerate the landing page's explicitly labelled Python-computed sample snapshot."""
 
 import json
-import sys
-from dataclasses import asdict
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from app.analysis.pipeline.runner import compute_health_score
-from app.analysis.profiler.duplicates import analyze_duplicates
-from app.analysis.profiler.missing import analyze_missing_values
-from app.analysis.profiler.outliers import analyze_outliers
-from app.analysis.profiler.schema import inspect_schema
-from app.analysis.statistics.descriptive import compute_descriptive_statistics
-from app.services.dataset_service import load_sample_dataset
+from infera.data_loader import calculate_health_score, get_dataset_schema, load_csv
+from infera.statistics import calculate_numerical_column_stats
 
 
 def main():
-    df, _ = load_sample_dataset("housing")
-    schema = inspect_schema(df)
-    missing = analyze_missing_values(df)
-    duplicates = analyze_duplicates(df, id_columns=schema.id_columns)
-    outliers = analyze_outliers(df, schema.numerical_columns)
-    statistics = compute_descriptive_statistics(df, schema.numerical_columns, schema.categorical_columns)
-    price = next(item for item in statistics.numerical if item.column == "price")
+    root = Path(__file__).resolve().parents[2]
+    housing_csv = root / "sample_data/housing.csv"
+    df = load_csv(housing_csv)
+
+    schema = get_dataset_schema(df)
+    health = calculate_health_score(df)
+    price_stats = calculate_numerical_column_stats(df["price"], "price")
+
+    missing_cells = sum(col["null_count"] for col in schema["columns"])
+    total_cells = schema["row_count"] * schema["column_count"]
+    missing_pct = round((missing_cells / total_cells) * 100.0, 2) if total_cells > 0 else 0.0
+
     snapshot = {
         "source": "sample_data/housing.csv",
-        "rows": schema.row_count,
-        "columns": schema.column_count,
-        "health": compute_health_score(missing, duplicates, outliers),
-        "missing": missing.overall_missing_percentage,
-        "duplicates": duplicates.duplicate_rows_count,
-        "numerical": len(schema.numerical_columns),
-        "mean": price.mean,
-        "median": price.median,
-        "histogram": [asdict(item) for item in price.histogram],
+        "rows": schema["row_count"],
+        "columns": schema["column_count"],
+        "health": health,
+        "missing": missing_pct,
+        "duplicates": int(df.duplicated().sum()),
+        "numerical": len(schema["numerical_columns"]),
+        "mean": price_stats.mean,
+        "median": price_stats.median,
+        "histogram": [b.model_dump() for b in price_stats.histogram],
     }
-    output = Path(__file__).resolve().parents[2] / "frontend/lib/sample-preview.json"
-    output.write_text(json.dumps(snapshot, indent=2) + "\n")
+
+    output = root / "frontend/lib/sample-preview.json"
+    output.write_text(json.dumps(snapshot, indent=2) + "\n", encoding="utf-8")
+    print(f"Generated sample preview snapshot at {output}")
 
 
 if __name__ == "__main__":

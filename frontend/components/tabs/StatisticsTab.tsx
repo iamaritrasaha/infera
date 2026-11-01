@@ -45,11 +45,11 @@ export function StatisticsTab({ data }: StatisticsTabProps) {
                   <td className="py-2.5 px-3 text-right text-slate-400">{d.count}</td>
                   <td className="py-2.5 px-3 text-right text-slate-200 font-semibold">{d.mean?.toLocaleString() ?? "Unavailable"}</td>
                   <td className="py-2.5 px-3 text-right text-slate-300">{d.std?.toLocaleString() ?? "Unavailable"}</td>
-                  <td className="py-2.5 px-3 text-right text-slate-400">{d.min.toLocaleString()}</td>
-                  <td className="py-2.5 px-3 text-right text-slate-400">{d.q25.toLocaleString()}</td>
+                  <td className="py-2.5 px-3 text-right text-slate-400">{d.min?.toLocaleString() ?? "Unavailable"}</td>
+                  <td className="py-2.5 px-3 text-right text-slate-400">{d.q25?.toLocaleString() ?? "Unavailable"}</td>
                   <td className="py-2.5 px-3 text-right text-blue-400 font-semibold">{d.median?.toLocaleString() ?? "Unavailable"}</td>
-                  <td className="py-2.5 px-3 text-right text-slate-400">{d.q75.toLocaleString()}</td>
-                  <td className="py-2.5 px-3 text-right text-slate-400">{d.max.toLocaleString()}</td>
+                  <td className="py-2.5 px-3 text-right text-slate-400">{d.q75?.toLocaleString() ?? "Unavailable"}</td>
+                  <td className="py-2.5 px-3 text-right text-slate-400">{d.max?.toLocaleString() ?? "Unavailable"}</td>
                   <td className="py-2.5 px-3 text-right text-slate-300">{d.skewness ?? "Unavailable"}</td>
                   <td className="py-2.5 px-3 text-right text-slate-300">{d.kurtosis ?? "Unavailable"}</td>
                 </tr>
